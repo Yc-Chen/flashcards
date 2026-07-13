@@ -23,6 +23,26 @@ Sheet *is* the database, and Google Apps Script serves the app.
   <img src="docs/screenshots/card.png" alt="Practice card with flag / edit / exclude tools" width="300">
 </p>
 
+## Why this instead of a flashcard app?
+
+- **Lightweight — it's just a web page.** Nothing to install or update; it runs
+  in the browser you already have, on any device (phone, tablet, laptop). No
+  app-store download, no account for yet another service, no sync engine to trust.
+- **No ads, no upsells — ever.** Because you self-host it (your own Apps Script
+  web app + your own Google Sheet), there's no company in the middle with a
+  reason to show you ads, gate features behind a subscription, or mine your
+  study data. It's yours end to end.
+- **Your browser's superpowers come for free.** Since it's a normal web page,
+  you can **select any word to look it up, translate, or search**, use
+  right-click / long-press actions, share a card, or use any browser extension
+  or accessibility feature you rely on — none of which a locked-down native app
+  lets you do.
+- **Flexible, dead-simple editing.** Your cards live in a **Google Sheet**, so
+  you can bulk-**import** a deck, tweak wording, fix a typo, add rows, or
+  reorganize columns whenever you want — from the Sheet on any device, or from
+  inside the app while you study. No proprietary format, no export/re-import
+  dance; the spreadsheet *is* the database.
+
 ## Deploy your own
 
 You'll need [Node.js](https://nodejs.org) and a Google account.
