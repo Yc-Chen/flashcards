@@ -50,6 +50,51 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+// ---- Spreadsheet menu ------------------------------------------------------
+// Runs when the bound Sheet is opened; adds a "🎴 Flashcards" menu so the deck
+// can be seeded (and the app deployed) without touching the Apps Script editor.
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('🎴 Flashcards')
+    .addItem('Load starter deck', 'menuSeed_')
+    .addItem('Reset & reload starter deck…', 'menuResetAndReseed_')
+    .addSeparator()
+    .addItem('How to deploy as an app', 'menuDeployHelp_')
+    .addToUi();
+}
+
+/** Menu: seed the starter deck (no-op if the sheet already has cards). */
+function menuSeed_() {
+  SpreadsheetApp.getUi().alert('Flashcards', seedCards(), SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/** Menu: wipe the `cards` sheet and reload the starter deck (asks first). */
+function menuResetAndReseed_() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.alert(
+    'Reset & reload starter deck',
+    'This DELETES everything in the "cards" sheet and reloads the starter deck. Continue?',
+    ui.ButtonSet.YES_NO);
+  if (resp === ui.Button.YES) {
+    ui.alert('Flashcards', resetAndReseed(), ui.ButtonSet.OK);
+  }
+}
+
+/** Menu: show the one-time steps to deploy this Sheet's script as a web app. */
+function menuDeployHelp_() {
+  var msg =
+    'Deploy this as a phone/laptop web app:\n\n' +
+    '1. Extensions → Apps Script → Deploy → New deployment.\n' +
+    '2. Type: Web app. Execute as: Me. Who has access: your choice\n' +
+    '   (Only myself / Anyone). Click Deploy.\n' +
+    '3. Authorize when prompted — it is your own script, so the\n' +
+    '   "unverified app" warning is expected (Advanced → Go to …).\n' +
+    '4. Copy the Web app URL. On iOS: Share → Add to Home Screen.\n\n' +
+    'To load the starter deck, use the "Load starter deck" menu item above.';
+  SpreadsheetApp.getUi().alert('Flashcards — how to deploy', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
 // ---- Sheet helpers ---------------------------------------------------------
 
 function getSheet_() {

@@ -45,6 +45,11 @@ Sheet *is* the database, and Google Apps Script serves the app.
 
 ## Deploy your own
 
+> **Using a coding agent?** See [`AGENTS.md`](./AGENTS.md) — it walks the same
+> deploy split into agent-runnable commands and the three browser steps Google
+> requires you (the human) to do: `clasp login`, enabling the Apps Script API,
+> and the first-run authorization. The manual steps below are the human version.
+
 You'll need [Node.js](https://nodejs.org) and a Google account.
 
 1. **Install clasp** (Google's Apps Script CLI) and log in:
@@ -72,9 +77,10 @@ You'll need [Node.js](https://nodejs.org) and a Google account.
    The `deploy` command prints a deployment ID; your web-app URL is
    `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec`.
 
-4. **Load the starter deck:** open the script editor (`clasp open-script`),
-   select the **`seedCards`** function, and click **Run**. Authorize when
-   prompted (it's your own script, so the "unverified" warning is expected).
+4. **Load the starter deck:** open your new Sheet and click **🎴 Flashcards →
+   Load starter deck** (the menu is added automatically when the Sheet opens).
+   Authorize when prompted — it's your own script, so the "unverified" warning
+   is expected.
 
 5. **Use it:** open the web-app URL, and on iOS tap **Share → Add to Home
    Screen** for an app-like icon.
