@@ -1,0 +1,6 @@
+# Only push the Apps Script sources; keep everything else local.
+**/**
+!appsscript.json
+!Code.js
+!Index.html
+!Seed.js

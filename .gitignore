@@ -1,0 +1,15 @@
+# Local Apps Script project config — contains your private script ID
+.clasp.json
+
+# Internal dev notes — contain the real deployment IDs and owner email
+AGENT.md
+
+# Vocab data with dictionary-derived glosses — kept local, not redistributed.
+# The app does not need these to run (built-in starter deck + your Google Sheet).
+nl_b1b2_glossed.csv
+nl_b1b2_cards.csv
+
+# OS / editor / tooling cruft
+.DS_Store
+*.log
+node_modules/

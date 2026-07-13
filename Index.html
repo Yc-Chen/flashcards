@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #1a1e27;
+      --card2: #222836;
+      --text: #eceff4;
+      --muted: #9aa4b2;
+      --accent: #4f8cff;
+      --green: #2fbf71;
+      --red: #e5533c;
+      --border: #2b3240;
+      --radius: 18px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f4f5f7;
+        --card: #ffffff;
+        --card2: #f0f2f5;
+        --text: #1a1d24;
+        --muted: #6b7280;
+        --border: #e2e5ea;
+      }
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      display: flex; flex-direction: column;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right)
+               env(safe-area-inset-bottom) env(safe-area-inset-left);
+      max-width: 640px; margin: 0 auto;
+    }
+    .wrap { flex: 1; display: flex; flex-direction: column; padding: 16px; }
+    .hidden { display: none !important; }
+
+    header { text-align: center; padding: 12px 0 4px; }
+    header h1 { font-size: 20px; margin: 0; font-weight: 700; letter-spacing: -0.3px; }
+    header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+    /* Home */
+    #home { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
+    .counts {
+      display: flex; gap: 12px; justify-content: center;
+    }
+    .count-pill {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 22px; text-align: center; min-width: 96px;
+    }
+    .count-pill .n { font-size: 34px; font-weight: 800; line-height: 1; }
+    .count-pill .l { font-size: 12px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .count-pill.due .n { color: var(--accent); }
+    .count-pill.new .n { color: var(--green); }
+
+    .boxbar { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+    .boxbar .b {
+      font-size: 12px; color: var(--muted);
+      background: var(--card2); border-radius: 10px; padding: 6px 10px;
+    }
+
+    button {
+      font-family: inherit; border: none; cursor: pointer;
+      border-radius: var(--radius); font-weight: 700;
+      transition: transform 0.05s ease, opacity 0.15s ease;
+    }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: default; }
+
+    .btn-primary {
+      background: var(--accent); color: #fff; font-size: 18px;
+      padding: 18px; width: 100%;
+    }
+    .btn-ghost {
+      background: var(--card2); color: var(--text); font-size: 14px;
+      padding: 12px 16px;
+    }
+
+    /* Session */
+    #session { flex: 1; display: flex; flex-direction: column; }
+    .progress {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    }
+    .progress .bar { flex: 1; height: 6px; background: var(--card2); border-radius: 3px; overflow: hidden; }
+    .progress .fill { height: 100%; width: 0; background: var(--accent); transition: width 0.3s ease; }
+    .progress .txt { font-size: 13px; color: var(--muted); min-width: 44px; text-align: right; }
+
+    .card {
+      flex: 1; background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; gap: 16px; overflow-y: auto; min-height: 260px;
+    }
+    .badge {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
+      color: var(--muted); border: 1px solid var(--border); border-radius: 20px;
+      padding: 4px 12px;
+    }
+    .badge.new { color: var(--green); border-color: var(--green); }
+    .front { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.2; }
+    .divider { width: 40px; height: 2px; background: var(--border); border-radius: 2px; }
+    .back { font-size: 22px; font-weight: 500; line-height: 1.4; }
+    .notes { font-size: 14px; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 12px; margin-top: 4px; width: 100%; }
+    .tap-hint { font-size: 14px; color: var(--muted); margin-top: 8px; }
+
+    /* Rendered Markdown */
+    .md p { margin: 0.35em 0; }
+    .md p:first-child { margin-top: 0; }
+    .md p:last-child { margin-bottom: 0; }
+    .md strong { font-weight: 800; }
+    .md em { font-style: italic; }
+    .md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em;
+      background: var(--card2); padding: 1px 6px; border-radius: 6px; }
+    .md h1, .md h2, .md h3 { margin: 0.3em 0; line-height: 1.2; }
+    .md h1 { font-size: 1.4em; } .md h2 { font-size: 1.25em; } .md h3 { font-size: 1.1em; }
+    .md ul, .md ol { margin: 0.35em 0; padding-left: 1.4em; text-align: left; }
+    .md li { margin: 0.15em 0; }
+    .md a { color: var(--accent); }
+    .md img { max-width: 100%; border-radius: 10px; }
+
+    .sheet-link { display: block; text-align: center; color: var(--muted);
+      font-size: 14px; text-decoration: none; padding: 6px; }
+    .sheet-link:active { opacity: 0.6; }
+
+    .actions { display: flex; gap: 12px; margin-top: 16px; }
+    .actions button { flex: 1; padding: 20px 12px; font-size: 17px; }
+    .btn-wrong { background: rgba(229, 83, 60, 0.15); color: var(--red); border: 1px solid rgba(229,83,60,0.4); }
+    .btn-right { background: rgba(47, 191, 113, 0.15); color: var(--green); border: 1px solid rgba(47,191,113,0.4); }
+    .btn-reveal { background: var(--accent); color: #fff; width: 100%; padding: 20px; font-size: 18px; margin-top: 16px; }
+    .sublabel { display: block; font-size: 12px; font-weight: 500; opacity: 0.8; margin-top: 3px; }
+
+    /* Card tools (flag + edit) in the progress row */
+    .tool {
+      background: var(--card2); color: var(--muted); font-size: 17px;
+      width: 38px; height: 32px; border-radius: 10px; line-height: 1;
+      display: flex; align-items: center; justify-content: center; padding: 0;
+    }
+    .tool.flagged { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
+
+    .flagged-line { text-align: center; font-size: 13px; padding: 2px 6px; }
+    .flagged-line a { color: #f59e0b; text-decoration: none; }
+
+    /* Editor modal */
+    .overlay {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .overlay .panel {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); width: min(560px, 94vw);
+      max-height: 88vh; overflow-y: auto; padding: 20px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .overlay h3 { margin: 0 0 4px; font-size: 18px; }
+    .overlay label {
+      font-size: 12px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.5px; margin-top: 6px; display: flex; justify-content: space-between;
+    }
+    .overlay label .hint { text-transform: none; letter-spacing: 0; opacity: 0.7; }
+    .overlay textarea {
+      font-family: inherit; font-size: 16px; color: var(--text);
+      background: var(--card2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 10px 12px; width: 100%; resize: vertical; line-height: 1.4;
+    }
+    .overlay textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    #edit-front { min-height: 44px; } #edit-back { min-height: 90px; } #edit-notes { min-height: 44px; }
+    .editor-actions { display: flex; gap: 10px; margin-top: 12px; }
+    .editor-actions button { flex: 1; padding: 14px; font-size: 16px; }
+    .editor-msg { font-size: 13px; color: var(--muted); min-height: 16px; text-align: center; }
+
+    /* Toast */
+    .toast {
+      position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
+      transform: translateX(-50%); z-index: 60;
+      background: var(--card2); color: var(--text); border: 1px solid var(--border);
+      padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 600;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3); opacity: 0; transition: opacity 0.2s ease;
+      pointer-events: none; max-width: 90vw; text-align: center;
+    }
+    .toast.show { opacity: 1; }
+
+    /* Summary / states */
+    .center-msg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; }
+    .center-msg .big { font-size: 48px; }
+    .center-msg h2 { margin: 0; font-size: 22px; }
+    .center-msg p { color: var(--muted); margin: 0; }
+    .spinner {
+      width: 32px; height: 32px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err { color: var(--red); font-size: 14px; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>🎴 Flashcards</h1>
+      <div class="sub" id="subtitle">Leitner practice</div>
+    </header>
+
+    <!-- Loading -->
+    <div id="loading" class="center-msg">
+      <div class="spinner"></div>
+      <p>Loading your cards…</p>
+    </div>
+
+    <!-- Error -->
+    <div id="error" class="center-msg hidden">
+      <div class="big">⚠️</div>
+      <h2>Couldn't load</h2>
+      <p class="err" id="error-msg"></p>
+      <button class="btn-ghost" onclick="loadHome()">Retry</button>
+    </div>
+
+    <!-- Home -->
+    <div id="home" class="hidden">
+      <div class="counts">
+        <div class="count-pill due"><div class="n" id="due-count">0</div><div class="l">Due</div></div>
+        <div class="count-pill new"><div class="n" id="new-count">0</div><div class="l">New</div></div>
+      </div>
+      <div class="boxbar" id="boxbar"></div>
+      <button class="btn-primary" id="start-btn" onclick="startSession()">Start practice</button>
+      <button class="btn-ghost" style="width:100%" onclick="loadHome()">Refresh</button>
+      <div id="flagged-line" class="flagged-line hidden"></div>
+      <a id="sheet-link" class="sheet-link" href="#" target="_blank" rel="noopener">✏️ Edit cards in Google Sheet ↗</a>
+    </div>
+
+    <!-- Session -->
+    <div id="session" class="hidden">
+      <div class="progress">
+        <div class="bar"><div class="fill" id="prog-fill"></div></div>
+        <div class="txt" id="prog-txt">0/0</div>
+        <button class="tool" id="flag-btn" title="Flag this card for later editing" onclick="toggleFlagCurrent()">⚑</button>
+        <button class="tool" id="edit-btn" title="Edit this card" onclick="openEditor()">✎</button>
+        <button class="tool" id="exclude-btn" title="Exclude this card from practice" onclick="excludeCurrent()">🚫</button>
+      </div>
+
+      <div class="card" id="card" onclick="onCardTap()">
+        <div class="badge" id="card-badge"></div>
+        <div class="front md" id="card-front"></div>
+        <!-- revealed -->
+        <div id="answer" class="hidden" style="display:flex;flex-direction:column;align-items:center;gap:14px;width:100%">
+          <div class="divider"></div>
+          <div class="back md" id="card-back"></div>
+          <div class="notes md" id="card-notes"></div>
+        </div>
+        <div class="tap-hint" id="tap-hint">Tap to reveal</div>
+      </div>
+
+      <!-- Reveal button (before answer shown) -->
+      <button class="btn-reveal" id="reveal-btn" onclick="reveal()">Show answer</button>
+
+      <!-- Grade buttons (after answer shown) -->
+      <div class="actions hidden" id="grade-actions">
+        <button class="btn-wrong" id="btn-wrong" onclick="grade(false)">
+          <span id="wrong-label">Wrong</span>
+        </button>
+        <button class="btn-right" id="btn-right" onclick="grade(true)">
+          <span id="right-label">Correct</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div id="summary" class="center-msg hidden">
+      <div class="big">🎉</div>
+      <h2 id="summary-title">Session complete!</h2>
+      <p id="summary-text"></p>
+      <button class="btn-primary" style="max-width:280px" onclick="loadHome()">Back to home</button>
+    </div>
+  </div>
+
+  <!-- Editor modal -->
+  <div id="editor" class="overlay hidden" onclick="if(event.target===this) closeEditor()">
+    <div class="panel">
+      <h3>Edit card</h3>
+      <label>Front <span class="hint">Markdown</span></label>
+      <textarea id="edit-front"></textarea>
+      <label>Back <span class="hint">Markdown</span></label>
+      <textarea id="edit-back"></textarea>
+      <label>Notes <span class="hint">Markdown · optional</span></label>
+      <textarea id="edit-notes"></textarea>
+      <div class="editor-msg" id="editor-msg"></div>
+      <div class="editor-actions">
+        <button class="btn-ghost" id="cancel-btn" onclick="closeEditor()">Cancel</button>
+        <button class="btn-primary" id="save-btn" onclick="saveEditor()">Save to Sheet</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    var queue = [];
+    var idx = 0;
+    var revealed = false;
+    var sessionStats = { right: 0, wrong: 0, total: 0 };
+    var pending = 0; // outstanding grade writes
+
+    function show(id) {
+      ['loading', 'error', 'home', 'session', 'summary'].forEach(function (s) {
+        document.getElementById(s).classList.toggle('hidden', s !== id);
+      });
+    }
+
+    // ---- Home ----
+    function loadHome() {
+      show('loading');
+      google.script.run
+        .withSuccessHandler(renderHome)
+        .withFailureHandler(showError)
+        .getSession();
+    }
+
+    var sessionData = null;
+    function renderHome(data) {
+      sessionData = data;
+      document.getElementById('due-count').textContent = data.dueCount;
+      document.getElementById('new-count').textContent = data.newCount;
+      document.getElementById('subtitle').textContent =
+        (data.activeCards != null ? data.activeCards : data.totalCards) + ' cards' +
+        (data.excludedCount > 0 ? ' · ' + data.excludedCount + ' excluded' : '');
+
+      var link = document.getElementById('sheet-link');
+      if (data.sheetUrl) { link.href = data.sheetUrl; link.style.display = ''; }
+      else { link.style.display = 'none'; }
+
+      var fl = document.getElementById('flagged-line');
+      if (data.flaggedCount > 0) {
+        var target = data.sheetUrl
+          ? '<a href="' + data.sheetUrl + '" target="_blank" rel="noopener">open Sheet ↗</a>'
+          : '';
+        fl.innerHTML = '⚑ ' + data.flaggedCount + ' flagged for editing — ' + target;
+        fl.classList.remove('hidden');
+      } else {
+        fl.classList.add('hidden');
+      }
+
+      var bar = document.getElementById('boxbar');
+      bar.innerHTML = '';
+      for (var b = 1; b <= 5; b++) {
+        var el = document.createElement('div');
+        el.className = 'b';
+        el.textContent = 'Box ' + b + ': ' + (data.boxCounts[b] || 0);
+        bar.appendChild(el);
+      }
+
+      var startBtn = document.getElementById('start-btn');
+      var toStudy = data.queue.length;
+      if (toStudy === 0) {
+        startBtn.textContent = 'Nothing due — all caught up!';
+        startBtn.disabled = true;
+      } else {
+        startBtn.textContent = 'Start practice (' + toStudy + ')';
+        startBtn.disabled = false;
+      }
+      show('home');
+    }
+
+    function showError(err) {
+      document.getElementById('error-msg').textContent =
+        (err && err.message) ? err.message : String(err);
+      show('error');
+    }
+
+    // ---- Session ----
+    function startSession() {
+      queue = sessionData.queue.slice();
+      idx = 0;
+      sessionStats = { right: 0, wrong: 0, total: queue.length };
+      pending = 0;
+      show('session');
+      renderCard();
+    }
+
+    function renderCard() {
+      if (idx >= queue.length) return finishSession();
+      revealed = false;
+      var c = queue[idx];
+
+      // progress
+      document.getElementById('prog-txt').textContent = (idx + 1) + '/' + queue.length;
+      document.getElementById('prog-fill').style.width =
+        (idx / queue.length * 100) + '%';
+
+      // badge
+      var badge = document.getElementById('card-badge');
+      if (c.isNew) {
+        badge.textContent = 'New card';
+        badge.className = 'badge new';
+      } else {
+        badge.textContent = (c.type ? c.type + ' · ' : '') + 'box ' + c.box;
+        badge.className = 'badge';
+      }
+
+      applyCardContent(c);
+      updateFlagBtn(c);
+
+      // reset answer area
+      document.getElementById('answer').classList.add('hidden');
+      document.getElementById('tap-hint').classList.remove('hidden');
+      document.getElementById('reveal-btn').classList.remove('hidden');
+      document.getElementById('grade-actions').classList.add('hidden');
+
+      // labels differ for new cards
+      document.getElementById('wrong-label').innerHTML = c.isNew
+        ? "Didn't know<span class='sublabel'>study it</span>"
+        : "Wrong<span class='sublabel'>&nbsp;</span>";
+      document.getElementById('right-label').innerHTML = c.isNew
+        ? "Already knew<span class='sublabel'>skip ahead</span>"
+        : "Correct<span class='sublabel'>&nbsp;</span>";
+    }
+
+    function setMd(id, val) {
+      var el = document.getElementById(id);
+      if (val === null || val === undefined || String(val).trim() === '') {
+        el.innerHTML = '';
+        el.style.display = 'none';
+      } else {
+        el.innerHTML = md(val);
+        el.style.display = '';
+      }
+    }
+
+    // Renders a card's front/back/notes without touching the reveal state,
+    // so edits show up immediately whether or not the answer is showing.
+    function applyCardContent(c) {
+      document.getElementById('card-front').innerHTML = md(c.front_side);
+      setMd('card-back', c.back_side);
+      setMd('card-notes', c.notes);
+    }
+
+    function updateFlagBtn(c) {
+      var btn = document.getElementById('flag-btn');
+      btn.classList.toggle('flagged', !!(c.flag && String(c.flag).trim()));
+    }
+
+    // ---- Flagging ----
+    // Uses the SAME updateCard(row, {object}) call that inline edits use, since
+    // that path is known to work everywhere (incl. iOS). The button toggles
+    // optimistically for responsiveness; the toast confirms the real result.
+    var FLAG_MARK = '⚑';
+    function toggleFlagCurrent() {
+      var c = queue[idx];
+      if (!c) return;
+      var nowFlagged = !(c.flag && String(c.flag).trim());
+      c.flag = nowFlagged ? FLAG_MARK : '';    // optimistic visual
+      updateFlagBtn(c);
+      google.script.run
+        .withSuccessHandler(function () {
+          showToast(nowFlagged ? '⚑ Flagged for editing' : 'Flag removed');
+        })
+        .withFailureHandler(function (err) {
+          c.flag = nowFlagged ? '' : FLAG_MARK; // revert on failure
+          updateFlagBtn(c);
+          showToast('Could not save flag');
+          console.error('flag write failed', err);
+        })
+        .updateCard(c.row, { flag: nowFlagged ? FLAG_MARK : '' });
+    }
+
+    // ---- Exclude (soft-delete) ----
+    // Drops the card from all future practice (reversible: clear the `exclude`
+    // column in the Sheet). Advances past it immediately so bad cards are quick
+    // to zap; the write persists in the background.
+    function excludeCurrent() {
+      var c = queue[idx];
+      if (!c) return;
+      google.script.run
+        .withSuccessHandler(function () { showToast('🚫 Excluded from practice'); })
+        .withFailureHandler(function (err) {
+          showToast('Could not exclude — try again');
+          console.error('exclude write failed', err);
+        })
+        .updateCard(c.row, { exclude: 'x' });
+      if (sessionStats.total > 0) sessionStats.total--;
+      idx++;
+      renderCard();
+    }
+
+    // ---- Inline editing ----
+    function openEditor() {
+      var c = queue[idx];
+      if (!c) return;
+      document.getElementById('edit-front').value = c.front_side || '';
+      document.getElementById('edit-back').value = c.back_side || '';
+      document.getElementById('edit-notes').value = c.notes || '';
+      document.getElementById('editor-msg').textContent = '';
+      document.getElementById('save-btn').disabled = false;
+      document.getElementById('editor').classList.remove('hidden');
+    }
+
+    function closeEditor() {
+      document.getElementById('editor').classList.add('hidden');
+    }
+
+    function saveEditor() {
+      var c = queue[idx];
+      if (!c) return;
+      var fields = {
+        front_side: document.getElementById('edit-front').value,
+        back_side: document.getElementById('edit-back').value,
+        notes: document.getElementById('edit-notes').value
+      };
+      var saveBtn = document.getElementById('save-btn');
+      saveBtn.disabled = true;
+      document.getElementById('editor-msg').textContent = 'Saving…';
+      google.script.run
+        .withSuccessHandler(function () {
+          // commit to in-memory card and refresh the visible card
+          c.front_side = fields.front_side;
+          c.back_side = fields.back_side;
+          c.notes = fields.notes;
+          applyCardContent(c);
+          closeEditor();
+          showToast('Saved to Sheet');
+        })
+        .withFailureHandler(function (err) {
+          saveBtn.disabled = false;
+          document.getElementById('editor-msg').textContent =
+            'Save failed: ' + ((err && err.message) ? err.message : err);
+          console.error('updateCard failed', err);
+        })
+        .updateCard(c.row, fields);
+    }
+
+    var toastTimer = null;
+    function showToast(msg) {
+      var t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { t.classList.remove('show'); }, 1800);
+    }
+
+    // ---- Minimal, safe Markdown renderer ----
+    function escHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function mdInline(s) {
+      // s is already HTML-escaped. Order matters: images before links.
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g,
+        '<img alt="$1" src="$2">');
+      s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+      s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+      s = s.replace(/(^|[\s(])_([^_]+)_/g, '$1<em>$2</em>');
+      return s;
+    }
+    function md(src) {
+      if (src === null || src === undefined) return '';
+      var lines = String(src).split(/\r?\n/);
+      var out = '', inList = false, listType = '';
+      function closeList() {
+        if (inList) { out += (listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+      }
+      for (var i = 0; i < lines.length; i++) {
+        var raw = lines[i].replace(/\s+$/, '');
+        if (raw.trim() === '') { closeList(); continue; }
+        var h = raw.match(/^(#{1,3})\s+(.*)$/);
+        if (h) { closeList(); var lv = h[1].length;
+          out += '<h' + lv + '>' + mdInline(escHtml(h[2])) + '</h' + lv + '>'; continue; }
+        var ul = raw.match(/^[-*]\s+(.*)$/);
+        if (ul) { if (!inList || listType !== 'ul') { closeList(); out += '<ul>'; inList = true; listType = 'ul'; }
+          out += '<li>' + mdInline(escHtml(ul[1])) + '</li>'; continue; }
+        var ol = raw.match(/^\d+\.\s+(.*)$/);
+        if (ol) { if (!inList || listType !== 'ol') { closeList(); out += '<ol>'; inList = true; listType = 'ol'; }
+          out += '<li>' + mdInline(escHtml(ol[1])) + '</li>'; continue; }
+        closeList();
+        out += '<p>' + mdInline(escHtml(raw)) + '</p>';
+      }
+      closeList();
+      return out;
+    }
+
+    function onCardTap() {
+      if (!revealed) reveal();
+    }
+
+    function reveal() {
+      revealed = true;
+      document.getElementById('answer').classList.remove('hidden');
+      document.getElementById('tap-hint').classList.add('hidden');
+      document.getElementById('reveal-btn').classList.add('hidden');
+      document.getElementById('grade-actions').classList.remove('hidden');
+    }
+
+    function grade(correct) {
+      if (!revealed) return;
+      var c = queue[idx];
+      if (correct) sessionStats.right++; else sessionStats.wrong++;
+
+      // Fire-and-forget write; count it so summary can wait if needed.
+      pending++;
+      google.script.run
+        .withSuccessHandler(function () { pending--; })
+        .withFailureHandler(function (err) {
+          pending--;
+          // Surface write failures but don't block practice.
+          console.error('grade write failed', err);
+        })
+        .gradeCard(c.row, correct);
+
+      idx++;
+      renderCard();
+    }
+
+    function finishSession() {
+      document.getElementById('prog-fill').style.width = '100%';
+      var s = sessionStats;
+      document.getElementById('summary-text').textContent =
+        s.right + ' known · ' + s.wrong + ' to review  (of ' + s.total + ')';
+      show('summary');
+    }
+
+    // boot
+    loadHome();
+  </script>
+</body>
+</html>
