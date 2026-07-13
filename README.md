@@ -42,6 +42,11 @@ Sheet *is* the database, and Google Apps Script serves the app.
   reorganize columns whenever you want — from the Sheet on any device, or from
   inside the app while you study. No proprietary format, no export/re-import
   dance; the spreadsheet *is* the database.
+- **Quiet by design — no notifications, no gamification.** It will never buzz
+  your phone with reminders you're already drowning in, and there are no
+  streaks, badges, XP, or leaderboards engineered to keep you hooked. It simply
+  shows what's due and gets out of the way. It runs on *your* motivation — not
+  manufactured guilt or dopamine loops.
 
 ## Deploy your own
 
