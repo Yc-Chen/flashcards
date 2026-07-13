@@ -15,6 +15,14 @@ Sheet *is* the database, and Google Apps Script serves the app.
 > account and Sheet (see below). It ships with a small Dutch A1/A2 starter deck,
 > but the app is language-agnostic; use it for anything.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/home.png" alt="Home screen — due/new counts and Leitner boxes" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/card.png" alt="Practice card with flag / edit / exclude tools" width="300">
+</p>
+
 ## Deploy your own
 
 You'll need [Node.js](https://nodejs.org) and a Google account.
