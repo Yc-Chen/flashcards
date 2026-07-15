@@ -230,6 +230,7 @@
       </div>
       <div class="boxbar" id="boxbar"></div>
       <button class="btn-primary" id="start-btn" onclick="startSession()">Start practice</button>
+      <button class="btn-ghost" style="width:100%" id="practice-btn" onclick="startPractice()">Practice weak cards</button>
       <button class="btn-ghost" style="width:100%" onclick="loadHome()">Refresh</button>
       <div id="flagged-line" class="flagged-line hidden"></div>
       <a id="sheet-link" class="sheet-link" href="#" target="_blank" rel="noopener">✏️ Edit cards in Google Sheet ↗</a>
@@ -276,7 +277,8 @@
       <div class="big">🎉</div>
       <h2 id="summary-title">Session complete!</h2>
       <p id="summary-text"></p>
-      <button class="btn-primary" style="max-width:280px" onclick="loadHome()">Back to home</button>
+      <button class="btn-primary hidden" id="keep-going-btn" style="max-width:280px" onclick="keepGoing()">Keep going</button>
+      <button class="btn-ghost" style="max-width:280px;width:100%" onclick="loadHome()">Back to home</button>
     </div>
   </div>
 
@@ -306,6 +308,7 @@
     var revealed = false;
     var sessionStats = { right: 0, wrong: 0, total: 0 };
     var pending = 0; // outstanding grade writes
+    var mode = 'study'; // 'study' = scheduled + writes; 'practice' = weak drill, no writes
 
     function show(id) {
       ['loading', 'error', 'home', 'session', 'summary'].forEach(function (s) {
@@ -364,6 +367,18 @@
         startBtn.textContent = 'Start practice (' + toStudy + ')';
         startBtn.disabled = false;
       }
+
+      // Practice drills weak (started, low-box) cards; enable only if any exist.
+      var weak = 0;
+      for (var wb = 1; wb <= 5; wb++) weak += (data.boxCounts[wb] || 0);
+      var practiceBtn = document.getElementById('practice-btn');
+      if (weak === 0) {
+        practiceBtn.textContent = 'No cards to drill yet';
+        practiceBtn.disabled = true;
+      } else {
+        practiceBtn.textContent = 'Practice weak cards (' + weak + ')';
+        practiceBtn.disabled = false;
+      }
       show('home');
     }
 
@@ -375,8 +390,37 @@
 
     // ---- Session ----
     function startSession() {
+      mode = 'study';
       queue = sessionData.queue.slice();
       idx = 0;
+      sessionStats = { right: 0, wrong: 0, total: queue.length };
+      pending = 0;
+      show('session');
+      renderCard();
+    }
+
+    // Weak-card drill: lowest-box cards first, graded purely to advance the
+    // queue. No schedule is written, so box/due/proficiency stay untouched.
+    function startPractice() {
+      show('loading');
+      google.script.run
+        .withSuccessHandler(beginPractice)
+        .withFailureHandler(showError)
+        .getWeakCards();
+    }
+
+    function beginPractice(res) {
+      var cards = (res && res.cards) ? res.cards : [];
+      if (cards.length === 0) {
+        // Nothing to drill (all cards are new/excluded) — bounce back home.
+        showToast('No cards to drill yet');
+        loadHome();
+        return;
+      }
+      mode = 'practice';
+      queue = cards.slice();
+      idx = 0;
+      revealed = false;
       sessionStats = { right: 0, wrong: 0, total: queue.length };
       pending = 0;
       show('session');
@@ -604,16 +648,20 @@
       var c = queue[idx];
       if (correct) sessionStats.right++; else sessionStats.wrong++;
 
-      // Fire-and-forget write; count it so summary can wait if needed.
-      pending++;
-      google.script.run
-        .withSuccessHandler(function () { pending--; })
-        .withFailureHandler(function (err) {
-          pending--;
-          // Surface write failures but don't block practice.
-          console.error('grade write failed', err);
-        })
-        .gradeCard(c.row, correct);
+      // Practice mode is schedule-neutral: grading only advances the queue, so
+      // box/due/right/wrong are never written. Study mode writes as before.
+      if (mode !== 'practice') {
+        // Fire-and-forget write; count it so summary can wait if needed.
+        pending++;
+        google.script.run
+          .withSuccessHandler(function () { pending--; })
+          .withFailureHandler(function (err) {
+            pending--;
+            // Surface write failures but don't block practice.
+            console.error('grade write failed', err);
+          })
+          .gradeCard(c.row, correct);
+      }
 
       idx++;
       renderCard();
@@ -622,9 +670,19 @@
     function finishSession() {
       document.getElementById('prog-fill').style.width = '100%';
       var s = sessionStats;
+      document.getElementById('summary-title').textContent =
+        mode === 'practice' ? 'Drill complete!' : 'Session complete!';
       document.getElementById('summary-text').textContent =
         s.right + ' known · ' + s.wrong + ' to review  (of ' + s.total + ')';
+      // "Keep going" re-drills weak cards; only meaningful in practice mode
+      // (study progress is written per-card, so re-fetch happens from home).
+      document.getElementById('keep-going-btn').classList.toggle('hidden', mode !== 'practice');
       show('summary');
+    }
+
+    // Continue practising: pull a fresh batch of weak cards.
+    function keepGoing() {
+      startPractice();
     }
 
     // boot

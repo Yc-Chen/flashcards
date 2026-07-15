@@ -106,13 +106,24 @@ user's own Sheet.
 
 ## How to use it
 
-- Home shows **Due** / **New** counts and the Leitner box breakdown. Tap **Start**.
+- Home shows **Due** / **New** counts and the Leitner box breakdown, with two ways
+  to study:
+  - **Start practice** — the scheduled Leitner session (all due cards + up to 10 new
+    ones). Grading **saves your progress** to the Sheet.
+  - **Practice weak cards** — a free drill of your weakest cards (lowest Leitner
+    boxes first, so a word you just missed shows up first). This is
+    **schedule-neutral: grading does *not* change any card's box or due date** — use
+    it to hammer shaky words as often as you like without disturbing your schedule.
+    Tap **Keep going** on the summary to pull a fresh batch.
 - Each card shows the **front** first. Tap it (or **Show answer**) to reveal the
   **back** + any **notes**.
 - Grade yourself:
   - Normal card: **Wrong** (back to box 1) or **Correct** (up one box).
   - Brand-new card: **Didn't know** (box 1) or **Already knew** (skip to box 4).
-- Progress saves to the Sheet immediately after each grade.
+- In a scheduled session, progress saves to the Sheet immediately after each grade.
+  In a weak-card drill, nothing about the schedule is written.
+- The **✎ edit / ⚑ flag / 🚫 exclude** tools save straight to the Sheet in **both**
+  modes (they change a card's content, not its schedule).
 
 ### Editing, flagging & excluding while you practice
 Each card has three tools in the progress row (top right):
@@ -161,14 +172,17 @@ and `![images](https://…)`. Put line breaks in a cell with **Alt+Enter**
 
 - Boxes **1→5**, review intervals **1, 2, 4, 8, 16 days**.
 - **Correct** → up one box. **Wrong** → back to box 1.
-- Up to **10 new cards** per session.
-- Tune in `Code.js`: `BOX_INTERVALS`, `NEW_PER_SESSION`, `KNOWN_START_BOX`.
+- Up to **10 new cards** per scheduled session.
+- **Practice weak cards** drills the lowest boxes and is **schedule-neutral** — it
+  never changes a card's box or due date. Up to **20 cards** per drill.
+- Tune in `Code.js`: `BOX_INTERVALS`, `NEW_PER_SESSION`, `KNOWN_START_BOX`,
+  `PRACTICE_LIMIT`.
 
 ## Project files
 
 | file | purpose |
 |------|---------|
-| `Code.js` | backend: `doGet`, Leitner logic, sheet I/O, the `getSession`/`gradeCard`/`updateCard` API |
+| `Code.js` | backend: `doGet`, Leitner logic, sheet I/O, the `getSession`/`getWeakCards`/`gradeCard`/`updateCard` API |
 | `Index.html` | the entire UI — inline CSS/JS + a small Markdown renderer |
 | `Seed.js` | starter deck + `seedCards` / `resetAndReseed` |
 | `appsscript.json` | Apps Script manifest (timezone + web-app access) |

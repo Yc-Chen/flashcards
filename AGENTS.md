@@ -112,14 +112,16 @@ Sheet, regardless of access level.
 ## Project files (what gets pushed)
 `.claspignore` limits the push to four files:
 - `Code.js` — backend: `doGet`, Leitner logic, sheet I/O, the
-  `getSession` / `gradeCard` / `updateCard` API. Also handles `?action=seed`.
+  `getSession` / `getWeakCards` / `gradeCard` / `updateCard` API. Also handles
+  `?action=seed`. `getWeakCards` returns low-box cards for the schedule-neutral
+  practice drill (the client grades them without writing back).
 - `Index.html` — the entire UI (inline CSS/JS + a small Markdown renderer;
   CDN scripts are blocked in the Apps Script sandbox).
 - `Seed.js` — starter deck + `seedCards` / `resetAndReseed`.
 - `appsscript.json` — manifest (timezone + web-app access).
 
 Tunables live at the top of `Code.js`: `BOX_INTERVALS`, `MAX_BOX`,
-`KNOWN_START_BOX`, `NEW_PER_SESSION`, `FLAG_MARK`.
+`KNOWN_START_BOX`, `NEW_PER_SESSION`, `PRACTICE_LIMIT`, `FLAG_MARK`.
 
 ## Sheet schema (`cards` tab) — order matters
 `id, type, front_side, back_side, notes, box, due, last_seen, right, wrong, added, flag, exclude`

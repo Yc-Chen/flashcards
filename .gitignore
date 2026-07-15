@@ -13,3 +13,6 @@ nl_b1b2_cards.csv
 .DS_Store
 *.log
 node_modules/
+
+# Transient patch files (e.g. from cloud plan runs)
+*.patch

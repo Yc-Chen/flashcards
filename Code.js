@@ -20,6 +20,9 @@ var KNOWN_START_BOX = 4;
 // How many never-studied cards to introduce per session.
 var NEW_PER_SESSION = 10;
 
+// How many weak (low-box) cards to serve in a schedule-neutral practice drill.
+var PRACTICE_LIMIT = 20;
+
 // Column order in the sheet. Keep in sync with the header row.
 // front_side / back_side / notes all support Markdown.
 // `flag`    holds a marker (FLAG_MARK) when you flag a card for later editing.
@@ -240,6 +243,30 @@ function toClientCard_(card) {
     box: isNew_(card) ? null : Number(card.box),
     isNew: isNew_(card)
   };
+}
+
+/**
+ * Returns weak cards (lowest Leitner boxes first) for a schedule-neutral
+ * practice drill. The client grades these purely to advance the queue — no
+ * write happens, so box/due/right/wrong are never touched. Only already-started
+ * cards are eligible (a brand-new card has no box); excluded cards are skipped.
+ * @param {number} [limit] Max cards to return (defaults to PRACTICE_LIMIT).
+ * @return {Object} { cards: [clientCard, ...] } sorted box 1 → up.
+ */
+function getWeakCards(limit) {
+  var cards = readCards_().cards;
+  var eligible = [];
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    if (String(card.exclude || '').trim() !== '') continue; // dropped from practice
+    if (isNew_(card)) continue;                              // never-studied, no box yet
+    eligible.push(card);
+  }
+  // Shuffle first, then a stable sort by box gives variety within each box.
+  shuffle_(eligible);
+  eligible.sort(function (a, b) { return Number(a.box) - Number(b.box); });
+  var cap = limit || PRACTICE_LIMIT;
+  return { cards: eligible.slice(0, cap).map(toClientCard_) };
 }
 
 /**
