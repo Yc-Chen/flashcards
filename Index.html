@@ -147,6 +147,21 @@
     .flagged-line { text-align: center; font-size: 13px; padding: 2px 6px; }
     .flagged-line a { color: #f59e0b; text-decoration: none; }
 
+    /* Practice-mode cue (schedule-neutral drill) */
+    .mode-banner {
+      display: none; align-items: center; justify-content: center; gap: 8px;
+      background: rgba(139, 123, 255, 0.15); color: #8b7bff;
+      border: 1px solid rgba(139, 123, 255, 0.4);
+      border-radius: 12px; padding: 9px 12px; margin-bottom: 12px;
+      font-size: 13px; font-weight: 700; text-align: center;
+    }
+    @media (prefers-color-scheme: light) { .mode-banner { color: #6d4dff; } }
+    #session.practice .mode-banner { display: flex; }
+    /* Recolor the session's blue accents to violet while practising */
+    #session.practice .progress .fill { background: #8b7bff; }
+    #session.practice .card { border-color: rgba(139, 123, 255, 0.55); }
+    #session.practice .btn-reveal { background: #8b7bff; }
+
     /* Editor modal */
     .overlay {
       position: fixed; inset: 0; z-index: 50;
@@ -238,6 +253,7 @@
 
     <!-- Session -->
     <div id="session" class="hidden">
+      <div class="mode-banner" id="mode-banner">🔁 Practice mode · grades won't change your schedule</div>
       <div class="progress">
         <div class="bar"><div class="fill" id="prog-fill"></div></div>
         <div class="txt" id="prog-txt">0/0</div>
@@ -391,6 +407,7 @@
     // ---- Session ----
     function startSession() {
       mode = 'study';
+      document.getElementById('session').classList.remove('practice');
       queue = sessionData.queue.slice();
       idx = 0;
       sessionStats = { right: 0, wrong: 0, total: queue.length };
@@ -418,6 +435,7 @@
         return;
       }
       mode = 'practice';
+      document.getElementById('session').classList.add('practice');
       queue = cards.slice();
       idx = 0;
       revealed = false;
