@@ -61,6 +61,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('🎴 Flashcards')
     .addItem('Open the app ↗', 'menuOpenApp_')
+    .addItem('Set app URL…', 'menuSetAppUrl_')
     .addSeparator()
     .addItem('Load starter deck', 'menuSeed_')
     .addItem('Reset & reload starter deck…', 'menuResetAndReseed_')
@@ -69,14 +70,45 @@ function onOpen() {
     .addToUi();
 }
 
+/**
+ * Resolves the web-app URL to open. Prefers the URL you saved via
+ * "Set app URL…" (stored in Script Properties, so it points at YOUR stable
+ * versioned deployment). Falls back to ScriptApp.getService().getUrl(), which
+ * returns the HEAD deployment — a different /exec URL from a clasp-versioned
+ * deployment, which is exactly why we let you pin the real one.
+ */
+function getWebAppUrl_() {
+  var stored = PropertiesService.getScriptProperties().getProperty('WEBAPP_URL');
+  return (stored && stored.trim()) || ScriptApp.getService().getUrl() || '';
+}
+
+/** Menu: prompt for and save the canonical web-app URL. */
+function menuSetAppUrl_() {
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+  var current = props.getProperty('WEBAPP_URL') || ScriptApp.getService().getUrl() || '(none)';
+  var resp = ui.prompt('Set app URL',
+    'Paste the web-app URL you actually use — the .../exec link of your stable ' +
+    'deployment (e.g. from your Home Screen icon).\n\nCurrently: ' + current,
+    ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var url = resp.getResponseText().trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec\b/.test(url)) {
+    ui.alert('Flashcards', 'That doesn\'t look like a /exec web-app URL, so it was not saved.', ui.ButtonSet.OK);
+    return;
+  }
+  props.setProperty('WEBAPP_URL', url);
+  ui.alert('Flashcards', 'Saved. "Open the app ↗" will now use this link.', ui.ButtonSet.OK);
+}
+
 /** Menu: pop a dialog with a link to this script's deployed web app. */
 function menuOpenApp_() {
   var ui = SpreadsheetApp.getUi();
-  var url = ScriptApp.getService().getUrl(); // /exec URL once deployed as a web app
+  var url = getWebAppUrl_();
   if (!url) {
     ui.alert('Flashcards',
-      'This script has no web-app URL yet. Deploy it as a web app first ' +
-      '(see "How to deploy as an app"), then this will link straight to it.',
+      'No web-app URL yet. Deploy the script as a web app (see "How to deploy ' +
+      'as an app"), then use "Set app URL…" to pin the link you use.',
       ui.ButtonSet.OK);
     return;
   }
