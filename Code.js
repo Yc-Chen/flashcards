@@ -60,11 +60,36 @@ function doGet(e) {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('🎴 Flashcards')
+    .addItem('Open the app ↗', 'menuOpenApp_')
+    .addSeparator()
     .addItem('Load starter deck', 'menuSeed_')
     .addItem('Reset & reload starter deck…', 'menuResetAndReseed_')
     .addSeparator()
     .addItem('How to deploy as an app', 'menuDeployHelp_')
     .addToUi();
+}
+
+/** Menu: pop a dialog with a link to this script's deployed web app. */
+function menuOpenApp_() {
+  var ui = SpreadsheetApp.getUi();
+  var url = ScriptApp.getService().getUrl(); // /exec URL once deployed as a web app
+  if (!url) {
+    ui.alert('Flashcards',
+      'This script has no web-app URL yet. Deploy it as a web app first ' +
+      '(see "How to deploy as an app"), then this will link straight to it.',
+      ui.ButtonSet.OK);
+    return;
+  }
+  var safe = url.replace(/"/g, '&quot;');
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 4px">' +
+      '<p style="margin:0 0 14px">Open the Flashcards app in a new tab:</p>' +
+      '<p style="margin:0"><a href="' + safe + '" target="_blank" rel="noopener" ' +
+        'style="display:inline-block;background:#4f8cff;color:#fff;text-decoration:none;' +
+        'font-weight:700;padding:10px 16px;border-radius:10px">🎴 Open Flashcards ↗</a></p>' +
+    '</div>'
+  ).setWidth(300).setHeight(130);
+  ui.showModalDialog(html, '🎴 Flashcards');
 }
 
 /** Menu: seed the starter deck (no-op if the sheet already has cards). */
