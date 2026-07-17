@@ -128,3 +128,89 @@ Tunables live at the top of `Code.js`: `BOX_INTERVALS`, `MAX_BOX`,
 - `HEADERS` in `Code.js` is the single source of truth; reads/writes are positional.
 - `box` blank = new card. `flag` = `⚑` when flagged. `exclude` non-empty (`x`) = soft-deleted (skipped).
 - `ensureSchema_()` self-heals missing columns on load without touching data.
+
+## Authoring your own deck as CSV — [AGENT]
+
+Generating a deck is the one part of this an agent can do end-to-end. The app has
+**no CSV importer** — you produce a CSV, the user imports it into the `cards` tab
+with Google Sheets' built-in **File → Import**. The Sheet is the database, so
+that import *is* the load.
+
+### Column reference
+
+Emit **all 13 columns in this exact order**, with this exact header row. Reads are
+positional (`Code.js:208`), so a reordered or missing column silently shifts every
+field into the wrong slot.
+
+| # | column | what you write |
+|---|--------|----------------|
+| 1 | `id` | any unique value; sequential integers are fine |
+| 2 | `type` | optional tag, shown as a badge on the card (e.g. `B1`, `vocab`, `grammar`). Blank is fine |
+| 3 | `front_side` | the prompt — **required**, Markdown |
+| 4 | `back_side` | the answer — **required**, Markdown |
+| 5 | `notes` | optional hint/example shown under the answer, Markdown |
+| 6 | `box` | **leave blank** — blank means "new card" |
+| 7 | `due` | **leave blank** — the app sets it on first grade |
+| 8 | `last_seen` | **leave blank** — app-managed |
+| 9 | `right` | **leave blank** — app-managed |
+| 10 | `wrong` | **leave blank** — app-managed |
+| 11 | `added` | optional date reference of your own, `YYYY-MM-DD` |
+| 12 | `flag` | **leave blank** — set to `⚑` by the app |
+| 13 | `exclude` | **leave blank** — set to `x` by the app |
+
+Columns 6–10, 12, and 13 are the app's bookkeeping. Writing values there hands
+the user a deck that is already half-way through a schedule they never studied.
+**Blank is the correct value for a new deck.**
+
+### Minimal example
+
+```csv
+id,type,front_side,back_side,notes,box,due,last_seen,right,wrong,added,flag,exclude
+1,B1,oké,oké; spreek uit: ookee,,,,,,,2026-07-11,,
+2,B1,verdom,"**to flatly refuse; damn**
+
+_Ik verdom het om nog langer te wachten._","Strong, informal.",,,,,,2026-07-11,,
+```
+
+Row 2 shows the two things worth copying: **Markdown in `back_side`**, and a
+**multi-line field** wrapped in double quotes with a real newline inside. That
+renders as a proper line break in the app. Standard RFC 4180 rules — escape a
+literal `"` by doubling it (`""`), and save the file **UTF-8** so accents and `⚑`
+survive.
+
+### Two failure modes to design around
+
+**Sheets will eat some of your cards on import.** A field starting with `=`, `+`,
+`-`, or `@` is parsed as a formula, and things like `1/2` or `3-4` become dates.
+For a language deck this is a live risk, not a hypothetical. Tell the user to set
+the import dialog's **"Convert text to numbers, dates, and formulas" → No**;
+that one toggle prevents all of it.
+
+**Write-back is by row number, not by `id`.** `gradeCard`/`updateCard` locate a
+card by its 1-based sheet row (`Code.js:209`, `_row = i + 2`) — `id` is never used
+as a lookup key. Consequences:
+- Importing with **Append** is safe; existing rows keep their positions.
+- Importing with **Replace current sheet** discards all existing progress. Only
+  suggest it for a fresh deck, and say so plainly.
+- The user must not sort or insert rows **while a session is open** — grades land
+  on whatever now occupies that row. Reloading the app afterwards is fine.
+
+### Import path — [HUMAN]
+Sheets' importer is browser-only; you cannot do this step for them.
+1. Open the Sheet → **File → Import → Upload** the CSV.
+2. Import location: **Append to current sheet** (keeps progress) or **Replace
+   current sheet** (fresh start — destroys existing cards).
+3. **"Convert text to numbers, dates, and formulas" → No** (see above).
+4. If replacing, confirm the header row survived — `ensureSchema_()` refills only
+   *empty* header cells, so a mangled header stays mangled.
+
+### Writing cards that are actually good
+- **One fact per card.** If `back_side` has two unrelated senses, make two cards.
+- **Front is the retrieval cue** — keep it short and unambiguous. A front that
+  matches three different answers trains nothing.
+- Put disambiguation, register, and a usage example in `notes`, not `back_side`,
+  so grading stays a clean yes/no.
+- Bold the core gloss in `back_side` and italicise an example sentence (see the
+  example above) — it reads well in the app's Markdown renderer.
+- Use `type` for anything the user may want to filter or bulk-edit later
+  (CEFR level, part of speech, source chapter).
