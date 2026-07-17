@@ -1,5 +1,8 @@
-# Local Apps Script project config — contains your private script ID
+# Local Apps Script project configs — contain script/container IDs.
+# .clasp.json      -> the private app (plain `clasp push`)
+# .clasp.public.json -> the public forkable template (`./push-public.sh`)
 .clasp.json
+.clasp.public.json
 
 # Internal dev notes — contain the real deployment IDs and owner email
 AGENT.md
