@@ -312,6 +312,31 @@ function readConfig_() {
   return cfg;
 }
 
+// Config keys the app UI may write. `webapp_url` is deliberately excluded — it
+// is deploy/fork plumbing, and letting the in-app Settings screen change it would
+// be a footgun (point your own app at nowhere). It stays Sheet-only.
+var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak'];
+
+/**
+ * Writes one setting from the app's Settings screen. Whitelisted so the client
+ * can only touch known preference keys, never arbitrary cells.
+ * @return {Object} { key, value } as written.
+ */
+function setConfig(key, value) {
+  if (CLIENT_CONFIG_KEYS.indexOf(key) === -1) {
+    throw new Error('Not a settable config key: ' + key);
+  }
+  var val = String(value == null ? '' : value).trim();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    writeConfigValue_(key, val);
+  } finally {
+    lock.releaseLock();
+  }
+  return { key: key, value: val };
+}
+
 /** Writes one config value, appending the row if the key isn't there yet. */
 function writeConfigValue_(key, value) {
   var sheet = getConfigSheet_();
@@ -419,6 +444,10 @@ function getSession() {
     flaggedCount: flaggedCount,
     excludedCount: excludedCount,
     sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
+    // Same spreadsheet, but deep-linked to the `cards` tab via its gid. Used for
+    // the "open the Sheet" links — landing on `cards` matters for import, where
+    // "Append to current sheet" targets whatever tab happens to be active.
+    cardsUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() + '#gid=' + data.sheet.getSheetId(),
     // Settings from the `config` tab. The client caches this for the page's
     // lifetime, which is why getWeakCards() doesn't need to return it too.
     config: readConfig_(),

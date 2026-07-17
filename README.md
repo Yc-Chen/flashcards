@@ -206,6 +206,12 @@ Add a row to the `cards` tab (laptop or phone). Fill `front_side`, `back_side`,
 optionally `type` and `notes`. **Leave `box`/`due` empty** so it appears as a
 new card. You can hand-tune proficiency any time by editing `box` and `due`.
 
+To bulk-add a whole deck from a CSV, tap **＋ Import cards from a file** on the
+home screen — it walks you through Google Sheets' own **File → Import** (a
+laptop/desktop step; the Sheets mobile app can't import). The one setting that
+matters there is **“Convert text to numbers, dates, and formulas” → No**, or
+Google turns entries like `1/2` into dates.
+
 ### Markdown
 `front_side`, `back_side`, and `notes` render Markdown: `**bold**`, `_italic_`,
 `` `code` ``, `# headings`, `- bullet lists`, `1.` numbered lists, `[links](https://…)`,
@@ -214,9 +220,13 @@ and `![images](https://…)`. Put line breaks in a cell with **Alt+Enter**
 
 ## Settings (`config` tab)
 
-Settings live in a second tab called **`config`**, as `key` / `value` rows. Edit a
-cell, reload the app — that's the whole workflow. The tab is created automatically
-with sensible defaults the first time the app runs, so there's nothing to set up.
+Most of these you can change **right in the app** — tap the **⚙** in the top-right,
+pick your language (the list is built from the voices your device actually has),
+speed and auto-speak, and Save. No need to touch the Sheet.
+
+Under the hood they live in a second tab called **`config`**, as `key` / `value`
+rows, so you can also edit a cell and reload. The tab is created automatically with
+sensible defaults the first time the app runs, so there's nothing to set up.
 
 | key | default | what it does |
 |-----|---------|--------------|
