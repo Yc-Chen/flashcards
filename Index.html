@@ -143,6 +143,8 @@
       display: flex; align-items: center; justify-content: center; padding: 0;
     }
     .tool.flagged { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
+    .tool.quit { font-size: 15px; }
+    .tool.quit:active { background: rgba(229, 83, 60, 0.18); color: var(--red); }
 
     .flagged-line { text-align: center; font-size: 13px; padding: 2px 6px; }
     .flagged-line a { color: #f59e0b; text-decoration: none; }
@@ -255,6 +257,7 @@
     <div id="session" class="hidden">
       <div class="mode-banner" id="mode-banner">🔁 Practice mode · grades won't change your schedule</div>
       <div class="progress">
+        <button class="tool quit" id="quit-btn" title="End this session" onclick="quitSession()">✕</button>
         <div class="bar"><div class="fill" id="prog-fill"></div></div>
         <div class="txt" id="prog-txt">0/0</div>
         <button class="tool" id="flag-btn" title="Flag this card for later editing" onclick="toggleFlagCurrent()">⚑</button>
@@ -290,7 +293,7 @@
 
     <!-- Summary -->
     <div id="summary" class="center-msg hidden">
-      <div class="big">🎉</div>
+      <div class="big" id="summary-emoji">🎉</div>
       <h2 id="summary-title">Session complete!</h2>
       <p id="summary-text"></p>
       <button class="btn-primary hidden" id="keep-going-btn" style="max-width:280px" onclick="keepGoing()">Keep going</button>
@@ -685,17 +688,28 @@
       renderCard();
     }
 
-    function finishSession() {
-      document.getElementById('prog-fill').style.width = '100%';
+    function finishSession(quit) {
       var s = sessionStats;
-      document.getElementById('summary-title').textContent =
-        mode === 'practice' ? 'Drill complete!' : 'Session complete!';
+      var done = idx; // cards graded/seen so far
+      document.getElementById('prog-fill').style.width =
+        (quit ? (s.total ? done / s.total * 100 : 0) : 100) + '%';
+      document.getElementById('summary-emoji').textContent = quit ? '👋' : '🎉';
+      document.getElementById('summary-title').textContent = quit
+        ? (mode === 'practice' ? 'Drill ended' : 'Session ended')
+        : (mode === 'practice' ? 'Drill complete!' : 'Session complete!');
       document.getElementById('summary-text').textContent =
-        s.right + ' known · ' + s.wrong + ' to review  (of ' + s.total + ')';
+        s.right + ' known · ' + s.wrong + ' to review  (' +
+        (quit ? done + ' of ' + s.total + ' done' : 'of ' + s.total) + ')';
       // "Keep going" re-drills weak cards; only meaningful in practice mode
       // (study progress is written per-card, so re-fetch happens from home).
       document.getElementById('keep-going-btn').classList.toggle('hidden', mode !== 'practice');
       show('summary');
+    }
+
+    // End the current session early. Graded cards are already saved (study) or
+    // never written (practice), so quitting mid-way is always safe.
+    function quitSession() {
+      finishSession(true);
     }
 
     // Continue practising: pull a fresh batch of weak cards.
