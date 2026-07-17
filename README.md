@@ -15,6 +15,12 @@ Sheet *is* the database, and Google Apps Script serves the app.
 > account and Sheet (see below). It ships with a small Dutch A1/A2 starter deck,
 > but the app is language-agnostic; use it for anything.
 
+**📋 [Example Sheet — make a copy to get your own][example-sheet]** (Dutch A1/A2
+starter deck, app code included). Copying it is the fastest way to start: you get
+the Sheet *and* the app in one click, no CLI. See [Deploy your own](#deploy-your-own).
+
+[example-sheet]: https://docs.google.com/spreadsheets/d/1XH4yAlpc0ahMKJP1JFcWsIpR_ATThbHTC9qAmDSiDoc/copy
+
 ## Screenshots
 
 <p align="center">
@@ -49,6 +55,32 @@ Sheet *is* the database, and Google Apps Script serves the app.
   manufactured guilt or dopamine loops.
 
 ## Deploy your own
+
+Two ways to get your own copy. Either way it ends up **entirely yours** — your
+Sheet, your script, your Google account. Nothing reports back here.
+
+### Option A — copy the example Sheet (no CLI) — recommended
+
+A Google Sheet copy includes its bound Apps Script project, so this gets you the
+deck *and* the app in one step. You need only a Google account.
+
+1. **[Make a copy of the example Sheet][example-sheet]** — this lands a
+   *Flashcards* Sheet in your own Drive, starter deck and code included.
+2. In your copy, open **Extensions → Apps Script**.
+3. Click **Deploy → New deployment**, choose type **Web app**, set *Execute as*
+   **Me** and *Who has access* **Only myself**, then **Deploy**.
+4. **Authorize** when prompted. It's your own script now, so the "Google hasn't
+   verified this app" warning is expected — click *Advanced → Go to Flashcards*.
+5. Open the web-app URL it gives you. On iOS, tap **Share → Add to Home Screen**
+   for an app-like icon.
+
+The starter deck comes with the copy, so you can skip the seeding step. To start
+from an empty deck instead, clear the rows under the header in the `cards` tab
+(or use **🎴 Flashcards → Reset & reseed** to get the starter deck back).
+
+### Option B — deploy from this repo with clasp
+
+Choose this if you want the code in git and plan to change it.
 
 > **Using a coding agent?** See [`AGENTS.md`](./AGENTS.md) — it walks the same
 > deploy split into agent-runnable commands and the three browser steps Google
@@ -187,6 +219,7 @@ and `![images](https://…)`. Put line breaks in a cell with **Alt+Enter**
 | `Seed.js` | starter deck + `seedCards` / `resetAndReseed` |
 | `appsscript.json` | Apps Script manifest (timezone + web-app access) |
 | `.claspignore` | limits what clasp pushes to the script |
+| `.claspignore.public`, `push-public.sh` | maintainer-only: sync this repo to the [example Sheet][example-sheet]'s script. Not needed to run or deploy the app — ignore them in your own copy. |
 
 ## License
 
