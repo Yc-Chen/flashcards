@@ -533,49 +533,82 @@
       return (v === undefined || v === null || v === '') ? fallback : v;
     }
 
-    // Plain text of a Markdown field. With a selector, only matching nodes.
-    function mdText_(src, selector) {
+    // Plain text of a Markdown field.
+    function mdText_(src) {
       var tmp = document.createElement('div');
       tmp.innerHTML = md(src);
-      if (!selector) return tmp.textContent.trim();
+      return tmp.textContent.trim();
+    }
+
+    // Plain text of every node matching `selector`, in document order.
+    function mdTexts_(src, selector) {
+      var tmp = document.createElement('div');
+      tmp.innerHTML = md(src);
       var hits = tmp.querySelectorAll(selector);
       var out = [];
       for (var i = 0; i < hits.length; i++) {
         var t = hits[i].textContent.trim();
         if (t) out.push(t);
       }
-      return out.join(' ');
+      return out;
     }
 
-    // The word, plus its example sentence once the answer is showing.
-    function speechTextFor(c, includeExample) {
+    // The word, then each example sentence — one part each, so they're spoken
+    // with a pause between rather than run together in a single breath.
+    function speechPartsFor(c, includeExample) {
       var parts = [mdText_(c.front_side)];
       if (includeExample) {
-        var ex = mdText_(c.back_side, 'em') || mdText_(c.notes, 'em');
-        if (ex) parts.push(ex);
+        var ex = mdTexts_(c.back_side, 'em');
+        if (!ex.length) ex = mdTexts_(c.notes, 'em');
+        parts = parts.concat(ex);
       }
-      return parts.filter(Boolean).join('. ');
+      return parts;
     }
 
-    function speak(text) {
-      if (!speechOn || !text) return;
-      speechSynthesis.cancel(); // a new tap replaces the utterance in flight
-      var u = new SpeechSynthesisUtterance(text);
+    // Sentence-final punctuation makes the engine land the phrase instead of
+    // running on into the next one. A fragment like "de hond" gets none of that
+    // prosody for free.
+    function endStopped_(s) {
+      s = String(s).trim();
+      return /[.!?…:;]$/.test(s) ? s : s + '.';
+    }
+
+    // Speaks each part as its own utterance. That is what produces the pause:
+    // engines break and reset prosody at an utterance boundary.
+    //
+    // All the speak() calls are queued synchronously rather than chained through
+    // onend + setTimeout, so every one of them still happens inside the tap that
+    // triggered it — iOS is strict about speech starting from a user gesture.
+    function speak(parts) {
+      if (!speechOn) return;
+      if (typeof parts === 'string') parts = [parts];
+      parts = parts.filter(function (p) { return p && String(p).trim(); });
+      if (!parts.length) return;
+      speechSynthesis.cancel(); // a new tap replaces whatever is in flight
+
       // Setting .lang and letting the browser pick the voice avoids getVoices(),
-      // which populates asynchronously and is empty on first call.
-      u.lang = cfg_('target_language', 'nl-NL');
+      // which populates asynchronously and is empty on the first call.
+      var lang = cfg_('target_language', 'nl-NL');
       var rate = parseFloat(cfg_('speech_rate', '0.9'));
-      u.rate = (isFinite(rate) && rate > 0) ? rate : 0.9;
+      if (!isFinite(rate) || rate <= 0) rate = 0.9;
       var btn = document.getElementById('speak-btn');
-      u.onstart = function () { btn.classList.add('speaking'); };
-      u.onend = u.onerror = function () { btn.classList.remove('speaking'); };
-      speechSynthesis.speak(u);
+
+      for (var i = 0; i < parts.length; i++) {
+        var u = new SpeechSynthesisUtterance(endStopped_(parts[i]));
+        u.lang = lang;
+        u.rate = rate;
+        if (i === 0) u.onstart = function () { btn.classList.add('speaking'); };
+        if (i === parts.length - 1) {
+          u.onend = u.onerror = function () { btn.classList.remove('speaking'); };
+        }
+        speechSynthesis.speak(u);
+      }
     }
 
     function speakCurrent() {
       var c = queue[idx];
       if (!c) return;
-      speak(speechTextFor(c, revealed));
+      speak(speechPartsFor(c, revealed));
     }
 
     // ---- Flagging ----
