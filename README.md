@@ -237,10 +237,17 @@ own-language gloss (the **bold** part) stays silent — you don't need it read t
 So write cards with a **bold gloss** and an _italic example_ and speech does the
 right thing on its own.
 
+> **Set `target_language` first.** It ships as `nl-NL` because the starter deck is
+> Dutch. If your cards are in another language, change it — a Dutch voice handed
+> Chinese cards can't pronounce a single character and just says *"punt"* ("dot").
+> The home screen always shows what it's set to (**🔊 Dutch (nl-NL)**), and the app
+> refuses to speak rather than produce nonsense if the two obviously disagree.
+
 > **Voice quality is your device's, not the app's.** iPhone and iPad are good out of
 > the box, and *Settings → Accessibility → Spoken Content → Voices* lets you download
 > a higher-quality voice for your language. On macOS, add voices in *System Settings →
-> Accessibility → Spoken Content*.
+> Accessibility → Spoken Content*. If nothing is installed for your language the app
+> tells you instead of speaking it in the wrong voice.
 
 ## Scheduling (Leitner)
 

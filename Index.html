@@ -352,9 +352,13 @@
       sessionData = data;
       document.getElementById('due-count').textContent = data.dueCount;
       document.getElementById('new-count').textContent = data.newCount;
+      // Show the speaking language: a wrong one produces silence or nonsense
+      // with no other clue as to why, so it must be visible without digging.
+      var lang = data.config && data.config.target_language;
       document.getElementById('subtitle').textContent =
         (data.activeCards != null ? data.activeCards : data.totalCards) + ' cards' +
-        (data.excludedCount > 0 ? ' · ' + data.excludedCount + ' excluded' : '');
+        (data.excludedCount > 0 ? ' · ' + data.excludedCount + ' excluded' : '') +
+        (speechOn && lang ? ' · 🔊 ' + langLabel_(lang) : '');
 
       var link = document.getElementById('sheet-link');
       if (data.sheetUrl) { link.href = data.sheetUrl; link.style.display = ''; }
@@ -527,10 +531,55 @@
     // from that one the first time either changed.
     var speechOn = ('speechSynthesis' in window);
 
+    // Han, kana and hangul. Used both to punctuate correctly and to catch the
+    // "Chinese deck still set to nl-NL" trap below.
+    var CJK_RE = /[㐀-䶿一-鿿豈-﫿぀-ヿ가-힯]/;
+    var CJK_LANGS = { zh: 1, ja: 1, ko: 1 };
+
     function cfg_(key, fallback) {
       var c = sessionData && sessionData.config;
       var v = c ? c[key] : '';
       return (v === undefined || v === null || v === '') ? fallback : v;
+    }
+
+    // 'zh-CN' -> 'zh'. Voice tags vary ('zh_CN', 'zh-Hans-CN'), so compare bases.
+    function langBase_(tag) {
+      return String(tag || '').toLowerCase().replace(/_/g, '-').split('-')[0];
+    }
+
+    // "Chinese (zh-CN)" for the home screen — the language must never be a
+    // mystery, since a wrong one fails silently.
+    function langLabel_(tag) {
+      try {
+        var name = new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(tag);
+        if (name && name.toLowerCase() !== String(tag).toLowerCase()) return name + ' (' + tag + ')';
+      } catch (e) { /* Intl.DisplayNames unsupported — the tag alone will do */ }
+      return String(tag);
+    }
+
+    // Best installed voice for a tag: exact match, else same base language.
+    // Picking explicitly beats setting .lang and hoping — an unmatched .lang
+    // silently falls back to the device default voice.
+    function pickVoice_(tag) {
+      var all = (speechOn && speechSynthesis.getVoices()) || [];
+      var want = String(tag).toLowerCase().replace(/_/g, '-');
+      var base = langBase_(tag);
+      var fallback = null;
+      for (var i = 0; i < all.length; i++) {
+        var vl = String(all[i].lang).toLowerCase().replace(/_/g, '-');
+        if (vl === want) return all[i];
+        if (!fallback && langBase_(vl) === base) fallback = all[i];
+      }
+      return fallback;
+    }
+
+    // Deliberately narrow: CJK vs not. It catches the trap that actually bites
+    // (a Chinese deck left on nl-NL, where the voice renders no glyphs at all
+    // and reads only the punctuation aloud) and stays quiet about pairs it has
+    // no way to judge — nl-NL vs de-DE is indistinguishable here, and guessing
+    // would just produce false alarms.
+    function scriptMismatch_(text, tag) {
+      return CJK_RE.test(text) !== !!CJK_LANGS[langBase_(tag)];
     }
 
     // Plain text of a Markdown field.
@@ -568,9 +617,15 @@
     // Sentence-final punctuation makes the engine land the phrase instead of
     // running on into the next one. A fragment like "de hond" gets none of that
     // prosody for free.
+    //
+    // This has to know full-width CJK stops (。！？). Treating 我很好。 as
+    // unterminated and appending a Latin "." yields 我很好。. — two stops, and a
+    // voice with nothing else it can pronounce will read them out by name.
     function endStopped_(s) {
       s = String(s).trim();
-      return /[.!?…:;]$/.test(s) ? s : s + '.';
+      if (!s) return s;
+      if (/[.!?…:;。！？；：、，]$/.test(s)) return s;
+      return CJK_RE.test(s) ? s + '。' : s + '.';
     }
 
     // Speaks each part as its own utterance. That is what produces the pause:
@@ -584,11 +639,25 @@
       if (typeof parts === 'string') parts = [parts];
       parts = parts.filter(function (p) { return p && String(p).trim(); });
       if (!parts.length) return;
-      speechSynthesis.cancel(); // a new tap replaces whatever is in flight
 
-      // Setting .lang and letting the browser pick the voice avoids getVoices(),
-      // which populates asynchronously and is empty on the first call.
       var lang = cfg_('target_language', 'nl-NL');
+
+      // Say nothing rather than something absurd. A voice that can't render the
+      // script drops every glyph and then reads the leftover punctuation by
+      // name — that is how a Chinese deck on a Dutch voice became "puntpunt".
+      if (scriptMismatch_(parts.join(' '), lang)) {
+        showToast('These cards don\'t look like ' + lang + ' — check target_language in the Sheet\'s config tab');
+        return;
+      }
+      // getVoices() is empty until the engine populates it, so an empty list
+      // means "don't know yet", not "none installed" — don't cry wolf then.
+      var voice = pickVoice_(lang);
+      if (!voice && speechSynthesis.getVoices().length) {
+        showToast('No ' + lang + ' voice on this device — add one in your system settings');
+        return;
+      }
+
+      speechSynthesis.cancel(); // a new tap replaces whatever is in flight
       var rate = parseFloat(cfg_('speech_rate', '0.9'));
       if (!isFinite(rate) || rate <= 0) rate = 0.9;
       var btn = document.getElementById('speak-btn');
@@ -596,6 +665,7 @@
       for (var i = 0; i < parts.length; i++) {
         var u = new SpeechSynthesisUtterance(endStopped_(parts[i]));
         u.lang = lang;
+        if (voice) u.voice = voice;
         u.rate = rate;
         if (i === 0) u.onstart = function () { btn.classList.add('speaking'); };
         if (i === parts.length - 1) {
@@ -826,6 +896,9 @@
     // No Web Speech support (older browsers, some in-app webviews) — drop the
     // button rather than leave one that does nothing.
     if (!speechOn) document.getElementById('speak-btn').style.display = 'none';
+    // Kick off voice-list population now, so the first tap can tell "no voice
+    // installed" apart from "not loaded yet".
+    if (speechOn) speechSynthesis.getVoices();
     loadHome();
   </script>
 </body>

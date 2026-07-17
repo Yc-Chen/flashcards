@@ -146,8 +146,13 @@ Reading it is deliberately failure-proof: `readConfig_()` catches everything and
 falls back to defaults, because every other server read blanks the whole UI on
 error and a typo'd setting must not do that.
 
-**If you built the deck, set `target_language` to match it.** Writing a Chinese
-deck and leaving `nl-NL` means every card is read aloud by a Dutch voice.
+**If you built the deck, set `target_language` to match it — this is not optional
+polish.** It defaults to `nl-NL` (the starter deck is Dutch). Leave it there on a
+Chinese deck and the Dutch voice cannot render a single Han character: it drops
+them all and reads the leftover punctuation by name, so the phone just says
+*"punt"*. The app now catches the obvious CJK-vs-Latin case and refuses to speak,
+but it cannot tell `nl-NL` from `de-DE` — so set it explicitly rather than
+relying on that.
 
 ## Authoring your own deck as CSV — [AGENT]
 
