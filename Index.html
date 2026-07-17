@@ -86,9 +86,9 @@
     /* Session */
     #session { flex: 1; display: flex; flex-direction: column; }
     .progress {
-      display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
     }
-    .progress .bar { flex: 1; height: 6px; background: var(--card2); border-radius: 3px; overflow: hidden; }
+    .progress .bar { flex: 1; min-width: 24px; height: 6px; background: var(--card2); border-radius: 3px; overflow: hidden; }
     .progress .fill { height: 100%; width: 0; background: var(--accent); transition: width 0.3s ease; }
     .progress .txt { font-size: 13px; color: var(--muted); min-width: 44px; text-align: right; }
 
@@ -136,13 +136,15 @@
     .btn-reveal { background: var(--accent); color: #fff; width: 100%; padding: 20px; font-size: 18px; margin-top: 16px; }
     .sublabel { display: block; font-size: 12px; font-weight: 500; opacity: 0.8; margin-top: 3px; }
 
-    /* Card tools (flag + edit) in the progress row */
+    /* Card tools (speak + flag + edit + exclude) in the progress row.
+       34px, not 38: five tools plus the bar have to fit a narrow phone. */
     .tool {
       background: var(--card2); color: var(--muted); font-size: 17px;
-      width: 38px; height: 32px; border-radius: 10px; line-height: 1;
+      flex: none; width: 34px; height: 32px; border-radius: 10px; line-height: 1;
       display: flex; align-items: center; justify-content: center; padding: 0;
     }
     .tool.flagged { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
+    .tool.speaking { background: rgba(79, 140, 255, 0.18); color: var(--accent); }
     .tool.quit { font-size: 15px; }
     .tool.quit:active { background: rgba(229, 83, 60, 0.18); color: var(--red); }
 
@@ -260,6 +262,7 @@
         <button class="tool quit" id="quit-btn" title="End this session" onclick="quitSession()">✕</button>
         <div class="bar"><div class="fill" id="prog-fill"></div></div>
         <div class="txt" id="prog-txt">0/0</div>
+        <button class="tool" id="speak-btn" title="Speak this card aloud" onclick="speakCurrent()">🔊</button>
         <button class="tool" id="flag-btn" title="Flag this card for later editing" onclick="toggleFlagCurrent()">⚑</button>
         <button class="tool" id="edit-btn" title="Edit this card" onclick="openEditor()">✎</button>
         <button class="tool" id="exclude-btn" title="Exclude this card from practice" onclick="excludeCurrent()">🚫</button>
@@ -451,6 +454,7 @@
     function renderCard() {
       if (idx >= queue.length) return finishSession();
       revealed = false;
+      if (speechOn) speechSynthesis.cancel(); // don't let the last card talk over this one
       var c = queue[idx];
 
       // progress
@@ -508,6 +512,70 @@
     function updateFlagBtn(c) {
       var btn = document.getElementById('flag-btn');
       btn.classList.toggle('flagged', !!(c.flag && String(c.flag).trim()));
+    }
+
+    // ---- Speech (Web Speech API) ----
+    // Which language to speak comes from the `config` tab, never from code —
+    // this deck is Dutch, someone else's copy is Chinese.
+    //
+    // Only the target language is ever spoken: front_side, plus the _italic_
+    // spans in back_side/notes, which by convention hold example sentences. The
+    // **bold** gloss is your own language, so speaking it would be noise.
+    //
+    // Spoken text is extracted by running the SAME md() the card is rendered
+    // with and reading the DOM back. A second Markdown parser here would drift
+    // from that one the first time either changed.
+    var speechOn = ('speechSynthesis' in window);
+
+    function cfg_(key, fallback) {
+      var c = sessionData && sessionData.config;
+      var v = c ? c[key] : '';
+      return (v === undefined || v === null || v === '') ? fallback : v;
+    }
+
+    // Plain text of a Markdown field. With a selector, only matching nodes.
+    function mdText_(src, selector) {
+      var tmp = document.createElement('div');
+      tmp.innerHTML = md(src);
+      if (!selector) return tmp.textContent.trim();
+      var hits = tmp.querySelectorAll(selector);
+      var out = [];
+      for (var i = 0; i < hits.length; i++) {
+        var t = hits[i].textContent.trim();
+        if (t) out.push(t);
+      }
+      return out.join(' ');
+    }
+
+    // The word, plus its example sentence once the answer is showing.
+    function speechTextFor(c, includeExample) {
+      var parts = [mdText_(c.front_side)];
+      if (includeExample) {
+        var ex = mdText_(c.back_side, 'em') || mdText_(c.notes, 'em');
+        if (ex) parts.push(ex);
+      }
+      return parts.filter(Boolean).join('. ');
+    }
+
+    function speak(text) {
+      if (!speechOn || !text) return;
+      speechSynthesis.cancel(); // a new tap replaces the utterance in flight
+      var u = new SpeechSynthesisUtterance(text);
+      // Setting .lang and letting the browser pick the voice avoids getVoices(),
+      // which populates asynchronously and is empty on first call.
+      u.lang = cfg_('target_language', 'nl-NL');
+      var rate = parseFloat(cfg_('speech_rate', '0.9'));
+      u.rate = (isFinite(rate) && rate > 0) ? rate : 0.9;
+      var btn = document.getElementById('speak-btn');
+      u.onstart = function () { btn.classList.add('speaking'); };
+      u.onend = u.onerror = function () { btn.classList.remove('speaking'); };
+      speechSynthesis.speak(u);
+    }
+
+    function speakCurrent() {
+      var c = queue[idx];
+      if (!c) return;
+      speak(speechTextFor(c, revealed));
     }
 
     // ---- Flagging ----
@@ -662,6 +730,10 @@
       document.getElementById('tap-hint').classList.add('hidden');
       document.getElementById('reveal-btn').classList.add('hidden');
       document.getElementById('grade-actions').classList.remove('hidden');
+      // Speak on reveal, never on card show: hearing the word before you try to
+      // recall it hands you the answer. This is also a user gesture, which is
+      // what the browser's autoplay policy requires.
+      if (String(cfg_('auto_speak', 'yes')).toLowerCase() === 'yes') speakCurrent();
     }
 
     function grade(correct) {
@@ -718,6 +790,9 @@
     }
 
     // boot
+    // No Web Speech support (older browsers, some in-app webviews) — drop the
+    // button rather than leave one that does nothing.
+    if (!speechOn) document.getElementById('speak-btn').style.display = 'none';
     loadHome();
   </script>
 </body>

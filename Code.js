@@ -40,6 +40,33 @@ var EXCLUDE_MARK = 'x';
 // Fields the client is allowed to edit / write back to the sheet.
 var EDITABLE_FIELDS = ['front_side', 'back_side', 'notes', 'flag', 'exclude'];
 
+// Columns resetForFork wipes: everything the app writes as you study.
+// `exclude` is deliberately not here — it marks cards as bad, which is deck
+// curation worth inheriting, not personal progress.
+var PROGRESS_FIELDS = ['box', 'due', 'last_seen', 'right', 'wrong', 'flag'];
+
+// ---- Config tab ------------------------------------------------------------
+// A second tab holds user settings as key/value rows. It exists so that using
+// this app for another language means editing one cell — not editing code and
+// pushing it. Someone who copied the Sheet may never open the Apps Script
+// editor at all.
+
+var CONFIG_SHEET_NAME = 'config';
+var CONFIG_HEADERS = ['key', 'value', 'description'];
+
+// key, default value, description. The description column is the only
+// documentation a Sheet-copier is guaranteed to see, so it has to stand alone.
+var DEFAULT_CONFIG = [
+  ['target_language', 'nl-NL',
+    'The language you are studying. BCP-47 tag, e.g. nl-NL, zh-CN, fr-FR, de-DE.'],
+  ['speech_rate', '0.9',
+    'Speaking speed. 0.5 = slow, 1 = normal.'],
+  ['auto_speak', 'yes',
+    'Speak the example sentence when you reveal an answer? yes / no'],
+  ['webapp_url', '',
+    'The /exec link of your own deployment. Leave blank to auto-detect.']
+];
+
 // ---- Web app entry point ---------------------------------------------------
 
 function doGet(e) {
@@ -61,44 +88,28 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('🎴 Flashcards')
     .addItem('Open the app ↗', 'menuOpenApp_')
-    .addItem('Set app URL…', 'menuSetAppUrl_')
     .addSeparator()
     .addItem('Load starter deck', 'menuSeed_')
     .addItem('Reset & reload starter deck…', 'menuResetAndReseed_')
     .addSeparator()
+    .addItem('Make this copy my own…', 'menuResetForFork_')
     .addItem('How to deploy as an app', 'menuDeployHelp_')
     .addToUi();
 }
 
 /**
- * Resolves the web-app URL to open. Prefers the URL you saved via
- * "Set app URL…" (stored in Script Properties, so it points at YOUR stable
- * versioned deployment). Falls back to ScriptApp.getService().getUrl(), which
- * returns the HEAD deployment — a different /exec URL from a clasp-versioned
- * deployment, which is exactly why we let you pin the real one.
+ * Resolves the web-app URL to open. Prefers `webapp_url` from the config tab,
+ * which points at YOUR stable versioned deployment. Falls back to
+ * ScriptApp.getService().getUrl(), which returns the HEAD deployment — a
+ * different /exec URL from a clasp-versioned one, which is exactly why the cell
+ * is worth pinning.
+ *
+ * The fallback is also what makes a copied Sheet work: `resetForFork` blanks
+ * the cell, so a fork resolves to its own deployment rather than the original's.
  */
 function getWebAppUrl_() {
-  var stored = PropertiesService.getScriptProperties().getProperty('WEBAPP_URL');
+  var stored = readConfig_().webapp_url;
   return (stored && stored.trim()) || ScriptApp.getService().getUrl() || '';
-}
-
-/** Menu: prompt for and save the canonical web-app URL. */
-function menuSetAppUrl_() {
-  var ui = SpreadsheetApp.getUi();
-  var props = PropertiesService.getScriptProperties();
-  var current = props.getProperty('WEBAPP_URL') || ScriptApp.getService().getUrl() || '(none)';
-  var resp = ui.prompt('Set app URL',
-    'Paste the web-app URL you actually use — the .../exec link of your stable ' +
-    'deployment (e.g. from your Home Screen icon).\n\nCurrently: ' + current,
-    ui.ButtonSet.OK_CANCEL);
-  if (resp.getSelectedButton() !== ui.Button.OK) return;
-  var url = resp.getResponseText().trim();
-  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec\b/.test(url)) {
-    ui.alert('Flashcards', 'That doesn\'t look like a /exec web-app URL, so it was not saved.', ui.ButtonSet.OK);
-    return;
-  }
-  props.setProperty('WEBAPP_URL', url);
-  ui.alert('Flashcards', 'Saved. "Open the app ↗" will now use this link.', ui.ButtonSet.OK);
 }
 
 /** Menu: pop a dialog with a link to this script's deployed web app. */
@@ -108,7 +119,8 @@ function menuOpenApp_() {
   if (!url) {
     ui.alert('Flashcards',
       'No web-app URL yet. Deploy the script as a web app (see "How to deploy ' +
-      'as an app"), then use "Set app URL…" to pin the link you use.',
+      'as an app"), then paste the /exec link into the `webapp_url` row of the ' +
+      '"config" tab.',
       ui.ButtonSet.OK);
     return;
   }
@@ -138,6 +150,22 @@ function menuResetAndReseed_() {
     ui.ButtonSet.YES_NO);
   if (resp === ui.Button.YES) {
     ui.alert('Flashcards', resetAndReseed(), ui.ButtonSet.OK);
+  }
+}
+
+/** Menu: make a copied Sheet the copier's own (asks first — it wipes progress). */
+function menuResetForFork_() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.alert(
+    'Make this copy my own',
+    'Run this once on a Sheet you just copied.\n\n' +
+    'It clears the saved app URL (so "Open the app ↗" points at YOUR ' +
+    'deployment, not the original\'s) and RESETS ALL STUDY PROGRESS — box, due ' +
+    'date, stats and flags — so you start fresh.\n\n' +
+    'Your cards and your config settings are kept. Continue?',
+    ui.ButtonSet.YES_NO);
+  if (resp === ui.Button.YES) {
+    ui.alert('Flashcards', resetForFork(), ui.ButtonSet.OK);
   }
 }
 
@@ -191,6 +219,113 @@ function ensureSchema_(sheet) {
     if (header[i] === '' || header[i] === null) { header[i] = HEADERS[i]; changed = true; }
   }
   if (changed) sheet.getRange(1, 1, 1, need).setValues([header]);
+}
+
+// ---- Config helpers --------------------------------------------------------
+// Deliberately parallel to getSheet_/ensureSchema_ rather than a generalization
+// of them: getSheet_ is hardcoded to `cards` and five files (including the
+// one-off maintenance scripts) depend on that exact signature.
+
+function getConfigSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
+  // Insert at the end so `cards` stays the tab you land on.
+  if (!sheet) sheet = ss.insertSheet(CONFIG_SHEET_NAME, ss.getNumSheets());
+  ensureConfigSchema_(sheet);
+  return sheet;
+}
+
+/**
+ * Self-heals the config tab the way ensureSchema_ does for `cards`: writes the
+ * header if absent and appends any DEFAULT_CONFIG key that isn't there yet, so
+ * a newly added setting shows up without the user recreating the tab.
+ * Never overwrites a value that is already set.
+ */
+function ensureConfigSchema_(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, CONFIG_HEADERS.length).setValues([CONFIG_HEADERS]);
+    sheet.setFrozenRows(1);
+    // At the default 100px, `value` truncates a /exec URL and `description` —
+    // the only documentation a Sheet-copier is guaranteed to see — is unreadable.
+    sheet.setColumnWidth(2, 320);
+    sheet.setColumnWidth(3, 460);
+  }
+  var have = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < keys.length; i++) have[String(keys[i][0]).trim()] = true;
+  }
+  var missing = [];
+  for (var d = 0; d < DEFAULT_CONFIG.length; d++) {
+    var key = DEFAULT_CONFIG[d][0];
+    if (!have[key]) missing.push([key, seedConfigValue_(d), DEFAULT_CONFIG[d][2]]);
+  }
+  if (missing.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, missing.length, CONFIG_HEADERS.length)
+      .setValues(missing);
+  }
+}
+
+/**
+ * The value to seed a config key with when it first appears in the tab.
+ *
+ * Everything takes its DEFAULT_CONFIG default except `webapp_url`: before this
+ * tab existed a pinned URL lived in Script Properties, so carry that across
+ * instead of silently dropping it. Script Properties do NOT travel with a Sheet
+ * copy but cells do, which is exactly why `resetForFork` exists.
+ */
+function seedConfigValue_(index) {
+  var key = DEFAULT_CONFIG[index][0];
+  var def = DEFAULT_CONFIG[index][1];
+  if (key === 'webapp_url' && !def) {
+    var legacy = PropertiesService.getScriptProperties().getProperty('WEBAPP_URL');
+    if (legacy && legacy.trim()) return legacy.trim();
+  }
+  return def;
+}
+
+/**
+ * Reads the config tab into a plain object, filling in defaults for anything
+ * missing.
+ *
+ * This never throws, which breaks the rule everywhere else in this file. Other
+ * server functions let exceptions reach the client's failure handler, which
+ * swaps the whole UI for the error screen — right for card data, wrong for a
+ * speech setting. A typo in a config cell must not take the app down.
+ */
+function readConfig_() {
+  var cfg = {};
+  for (var i = 0; i < DEFAULT_CONFIG.length; i++) cfg[DEFAULT_CONFIG[i][0]] = DEFAULT_CONFIG[i][1];
+  try {
+    var sheet = getConfigSheet_();
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return cfg;
+    var values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var r = 0; r < values.length; r++) {
+      var key = String(values[r][0]).trim();
+      if (key) cfg[key] = String(values[r][1]).trim();
+    }
+  } catch (err) {
+    // Defaults are already in place — a broken config tab must not break the app.
+  }
+  return cfg;
+}
+
+/** Writes one config value, appending the row if the key isn't there yet. */
+function writeConfigValue_(key, value) {
+  var sheet = getConfigSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < keys.length; i++) {
+      if (String(keys[i][0]).trim() === key) {
+        sheet.getRange(i + 2, 2).setValue(value);
+        return;
+      }
+    }
+  }
+  sheet.appendRow([key, value, '']);
 }
 
 /** Reads all cards as objects, tagging each with its 1-based sheet row. */
@@ -284,6 +419,9 @@ function getSession() {
     flaggedCount: flaggedCount,
     excludedCount: excludedCount,
     sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
+    // Settings from the `config` tab. The client caches this for the page's
+    // lifetime, which is why getWeakCards() doesn't need to return it too.
+    config: readConfig_(),
     queue: queue
   };
 }
@@ -415,6 +553,48 @@ function shuffle_(arr) {
     var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
   }
   return arr;
+}
+
+/**
+ * Makes a freshly-copied Sheet genuinely the copier's own. Run once, from the
+ * "🎴 Flashcards → Make this copy my own…" menu, after copying a template.
+ *
+ * Copying a Sheet copies its cells, so a fork inherits both the original's
+ * `webapp_url` (pointing "Open the app ↗" at someone else's deployment, which
+ * they cannot open) and whatever study progress the template shipped with. This
+ * clears both. Cards, `target_language` and the rest of the config survive.
+ *
+ * Idempotent — running it twice is harmless.
+ */
+function resetForFork() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    writeConfigValue_('webapp_url', '');
+
+    var sheet = getSheet_();
+    var lastRow = sheet.getLastRow();
+    var cleared = 0;
+    if (lastRow > 1) {
+      // One bulk read + one bulk write: per-cell writes time out on a deck of
+      // a few thousand cards.
+      var range = sheet.getRange(2, 1, lastRow - 1, HEADERS.length);
+      var values = range.getValues();
+      for (var r = 0; r < values.length; r++) {
+        var row = values[r];
+        if (row.every(function (c) { return c === '' || c === null; })) continue; // blank row
+        for (var f = 0; f < PROGRESS_FIELDS.length; f++) {
+          row[HEADERS.indexOf(PROGRESS_FIELDS[f])] = '';
+        }
+        cleared++;
+      }
+      range.setValues(values);
+    }
+    return 'This copy is now yours. Cleared the saved app URL and reset progress on ' +
+      cleared + ' card' + (cleared === 1 ? '' : 's') + '.';
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**

@@ -8,12 +8,15 @@ Sheet *is* the database, and Google Apps Script serves the app.
 - **Backend:** a Google Sheet (`cards` tab). Add/edit cards from anywhere.
 - **App:** a single Apps Script web app (mobile-first, add-to-home-screen friendly).
 - **Scheduling:** Leitner boxes (1→5), with immediate write-back of your progress.
+- **Speech:** tap 🔊 to hear a word or example in the language you're studying —
+  your browser's own voices, no API key, no cost.
 - **In-app tools:** edit a card, flag it for later, or exclude a bad card — all
   saved straight to the Sheet.
 
 > This repo is a **template** — deploy your own copy against your own Google
 > account and Sheet (see below). It ships with a small Dutch A1/A2 starter deck,
-> but the app is language-agnostic; use it for anything.
+> but the app is language-agnostic: set `target_language` in the `config` tab and
+> it's a Chinese (or French, or Japanese) app instead. Use it for anything.
 
 **📋 [Example Sheet — make a copy to get your own][example-sheet]** (Dutch A1/A2
 starter deck, app code included). Copying it is the fastest way to start: you get
@@ -66,13 +69,18 @@ deck *and* the app in one step. You need only a Google account.
 
 1. **[Make a copy of the example Sheet][example-sheet]** — this lands a
    *Flashcards* Sheet in your own Drive, starter deck and code included.
-2. In your copy, open **Extensions → Apps Script**.
-3. Click **Deploy → New deployment**, choose type **Web app**, set *Execute as*
+2. In your copy, click **🎴 Flashcards → Make this copy my own…** — this resets
+   the study progress the copy inherited and clears the original's app link, so
+   the deck starts fresh and points at *your* deployment. Authorize when asked.
+3. Open **Extensions → Apps Script**.
+4. Click **Deploy → New deployment**, choose type **Web app**, set *Execute as*
    **Me** and *Who has access* **Only myself**, then **Deploy**.
-4. **Authorize** when prompted. It's your own script now, so the "Google hasn't
+5. **Authorize** when prompted. It's your own script now, so the "Google hasn't
    verified this app" warning is expected — click *Advanced → Go to Flashcards*.
-5. Open the web-app URL it gives you. On iOS, tap **Share → Add to Home Screen**
+6. Open the web-app URL it gives you. On iOS, tap **Share → Add to Home Screen**
    for an app-like icon.
+7. Studying something other than Dutch? Set **`target_language`** in the
+   **`config`** tab (see [Settings](#settings-config-tab)).
 
 The starter deck comes with the copy, so you can skip the seeding step. To start
 from an empty deck instead, clear the rows under the header in the `cards` tab
@@ -148,7 +156,8 @@ user's own Sheet.
     it to hammer shaky words as often as you like without disturbing your schedule.
     Tap **Keep going** on the summary to pull a fresh batch.
 - Each card shows the **front** first. Tap it (or **Show answer**) to reveal the
-  **back** + any **notes**.
+  **back** + any **notes**. Revealing also speaks the example aloud — see
+  [Hearing your cards](#hearing-your-cards-).
 - Grade yourself:
   - Normal card: **Wrong** (back to box 1) or **Correct** (up one box).
   - Brand-new card: **Didn't know** (box 1) or **Already knew** (skip to box 4).
@@ -157,9 +166,11 @@ user's own Sheet.
 - The **✎ edit / ⚑ flag / 🚫 exclude** tools save straight to the Sheet in **both**
   modes (they change a card's content, not its schedule).
 
-### Editing, flagging & excluding while you practice
-Each card has three tools in the progress row (top right):
+### Card tools while you practice
+Each card has four tools in the progress row (top right):
 
+- **🔊 Speak** — hear the card in the language you're studying. Works before or
+  after revealing (after, it reads the example sentence too).
 - **✎ Edit** — edit the card's front / back / notes (Markdown) and **Save to
   Sheet** — written back immediately. Works on phone and laptop.
 - **⚑ Flag** — one tap marks the card (writes `⚑` to its `flag` column) so you
@@ -187,7 +198,8 @@ Each card has three tools in the progress row (top right):
 | `exclude` | holds `x` when excluded from practice (soft-delete) |
 
 The app self-heals the schema: on first load it adds any missing columns
-(`flag`, `exclude`) without touching your data.
+(`flag`, `exclude`) without touching your data. It does the same for the
+[`config` tab](#settings-config-tab), so both tabs appear on their own.
 
 ### Adding your own cards
 Add a row to the `cards` tab (laptop or phone). Fill `front_side`, `back_side`,
@@ -199,6 +211,36 @@ new card. You can hand-tune proficiency any time by editing `box` and `due`.
 `` `code` ``, `# headings`, `- bullet lists`, `1.` numbered lists, `[links](https://…)`,
 and `![images](https://…)`. Put line breaks in a cell with **Alt+Enter**
 (Option+Enter on Mac) inside the Google Sheet.
+
+## Settings (`config` tab)
+
+Settings live in a second tab called **`config`**, as `key` / `value` rows. Edit a
+cell, reload the app — that's the whole workflow. The tab is created automatically
+with sensible defaults the first time the app runs, so there's nothing to set up.
+
+| key | default | what it does |
+|-----|---------|--------------|
+| `target_language` | `nl-NL` | **The language you're studying.** A [BCP-47](https://en.wikipedia.org/wiki/IETF_language_tag) tag — `zh-CN`, `fr-FR`, `de-DE`, `es-ES`, `ja-JP`… |
+| `speech_rate` | `0.9` | Speaking speed. `0.5` = slow, `1` = normal. |
+| `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
+| `webapp_url` | *(blank)* | The `/exec` link of your deployment, used by **🎴 Flashcards → Open the app ↗**. Blank = auto-detect. |
+
+## Hearing your cards 🔊
+
+Tap **🔊** in a card's tool row to hear it, and the example sentence plays
+automatically when you reveal an answer (turn that off with `auto_speak`).
+
+Speech uses your browser's built-in voices — nothing is sent anywhere, there's no
+API key, and it costs nothing. **Only the language you're studying is ever spoken:**
+the `front_side`, plus any *italic* example sentences in `back_side` / `notes`. Your
+own-language gloss (the **bold** part) stays silent — you don't need it read to you.
+So write cards with a **bold gloss** and an _italic example_ and speech does the
+right thing on its own.
+
+> **Voice quality is your device's, not the app's.** iPhone and iPad are good out of
+> the box, and *Settings → Accessibility → Spoken Content → Voices* lets you download
+> a higher-quality voice for your language. On macOS, add voices in *System Settings →
+> Accessibility → Spoken Content*.
 
 ## Scheduling (Leitner)
 

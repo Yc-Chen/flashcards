@@ -114,7 +114,8 @@ Sheet, regardless of access level.
 - `Code.js` — backend: `doGet`, Leitner logic, sheet I/O, the
   `getSession` / `getWeakCards` / `gradeCard` / `updateCard` API. Also handles
   `?action=seed`. `getWeakCards` returns low-box cards for the schedule-neutral
-  practice drill (the client grades them without writing back).
+  practice drill (the client grades them without writing back). Also owns the
+  `config` tab (`readConfig_`) and `resetForFork`.
 - `Index.html` — the entire UI (inline CSS/JS + a small Markdown renderer;
   CDN scripts are blocked in the Apps Script sandbox).
 - `Seed.js` — starter deck + `seedCards` / `resetAndReseed`.
@@ -128,6 +129,25 @@ Tunables live at the top of `Code.js`: `BOX_INTERVALS`, `MAX_BOX`,
 - `HEADERS` in `Code.js` is the single source of truth; reads/writes are positional.
 - `box` blank = new card. `flag` = `⚑` when flagged. `exclude` non-empty (`x`) = soft-deleted (skipped).
 - `ensureSchema_()` self-heals missing columns on load without touching data.
+
+## Settings (`config` tab) — [AGENT]
+A second tab, `config`, holds `key` / `value` rows. It is created with defaults on
+first run (`ensureConfigSchema_`, same self-healing idea as `ensureSchema_`), so
+there is nothing to set up and nothing to migrate.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `target_language` | `nl-NL` | The language being studied. BCP-47 tag. **This is the only thing to change for a non-Dutch deck.** |
+| `speech_rate` | `0.9` | Speaking speed. |
+| `auto_speak` | `yes` | Speak the example on reveal? |
+| `webapp_url` | *(blank)* | `/exec` link for the Sheet's "Open the app ↗" menu. Blank = auto-detect. |
+
+Reading it is deliberately failure-proof: `readConfig_()` catches everything and
+falls back to defaults, because every other server read blanks the whole UI on
+error and a typo'd setting must not do that.
+
+**If you built the deck, set `target_language` to match it.** Writing a Chinese
+deck and leaving `nl-NL` means every card is read aloud by a Dutch voice.
 
 ## Authoring your own deck as CSV — [AGENT]
 
@@ -211,6 +231,9 @@ Sheets' importer is browser-only; you cannot do this step for them.
 - Put disambiguation, register, and a usage example in `notes`, not `back_side`,
   so grading stays a clean yes/no.
 - Bold the core gloss in `back_side` and italicise an example sentence (see the
-  example above) — it reads well in the app's Markdown renderer.
+  example above). This is not only typography: **the app speaks _italic_ spans
+  aloud in `target_language` and never speaks the bold gloss**, so following the
+  convention is what makes text-to-speech read the right half of the card. An
+  example sentence left un-italicised is an example the learner never hears.
 - Use `type` for anything the user may want to filter or bulk-edit later
   (CEFR level, part of speech, source chapter).
