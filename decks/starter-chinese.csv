@@ -1,0 +1,169 @@
+id,type,front_side,back_side,notes,box,due,last_seen,right,wrong,added,flag,exclude
+c001,vocab,想,"**to want to; would like**
+
+*我想喝茶。*
+xiǎng · 我想喝茶 Wǒ xiǎng hē chá · I want to drink tea",,,,,,,2026-07-17,,
+c002,vocab,喝,"**to drink**
+
+*你想喝什么？*
+hē · 你想喝什么 Nǐ xiǎng hē shénme · What do you want to drink",,,,,,,2026-07-17,,
+c003,vocab,吃,"**to eat**
+
+*我们一起吃饭吧。*
+chī · 我们一起吃饭吧 Wǒmen yìqǐ chīfàn ba · Let's eat together",,,,,,,2026-07-17,,
+c004,vocab,学校,"**school**
+
+*我八点去学校。*
+xuéxiào · 我八点去学校 Wǒ bā diǎn qù xuéxiào · I go to school at 8",,,,,,,2026-07-17,,
+c005,vocab,老师,"**teacher**
+
+*我的老师很好。*
+lǎoshī · 我的老师很好 Wǒ de lǎoshī hěn hǎo · My teacher is very nice",,,,,,,2026-07-17,,
+c006,vocab,学生,"**student**
+
+*他是大学生。*
+xuésheng · 他是大学生 Tā shì dàxuéshēng · He is a university student",,,,,,,2026-07-17,,
+c007,vocab,朋友,"**friend**
+
+*她是我的好朋友。*
+péngyou · 她是我的好朋友 Tā shì wǒ de hǎo péngyou · She is my good friend",,,,,,,2026-07-17,,
+c008,vocab,家,"**home; family**
+
+*我现在在家。*
+jiā · 我现在在家 Wǒ xiànzài zài jiā · I'm at home now",,,,,,,2026-07-17,,
+c009,vocab,今天,"**today**
+
+*今天很热。*
+jīntiān · 今天很热 Jīntiān hěn rè · Today is hot",,,,,,,2026-07-17,,
+c010,vocab,昨天,"**yesterday**
+
+*昨天我没上班。*
+zuótiān · 昨天我没上班 Zuótiān wǒ méi shàngbān · I didn't work yesterday",,,,,,,2026-07-17,,
+c011,vocab,明天,"**tomorrow**
+
+*明天见！*
+míngtiān · 明天见 Míngtiān jiàn · See you tomorrow",,,,,,,2026-07-17,,
+c012,vocab,现在,"**now**
+
+*现在几点？*
+xiànzài · 现在几点 Xiànzài jǐ diǎn · What time is it now",,,,,,,2026-07-17,,
+c013,vocab,时间,"**time**
+
+*我今天没有时间。*
+shíjiān · 我今天没有时间 Wǒ jīntiān méiyǒu shíjiān · I don't have time today",,,,,,,2026-07-17,,
+c014,vocab,钱,"**money**
+
+*这个多少钱？*
+qián · 这个多少钱 Zhège duōshao qián · How much is this",,,,,,,2026-07-17,,
+c015,vocab,买,"**to buy**
+
+*我想买一点水果。*
+mǎi · 我想买一点水果 Wǒ xiǎng mǎi yìdiǎn shuǐguǒ · I want to buy some fruit",,,,,,,2026-07-17,,
+c016,vocab,贵,"**expensive**
+
+*这个太贵了。*
+guì · 这个太贵了 Zhège tài guì le · This is too expensive",,,,,,,2026-07-17,,
+c017,vocab,便宜,"**cheap**
+
+*那个很便宜。*
+piányi · 那个很便宜 Nàge hěn piányi · That one is cheap",,,,,,,2026-07-17,,
+c018,vocab,喜欢,"**to like**
+
+*我喜欢中国菜。*
+xǐhuan · 我喜欢中国菜 Wǒ xǐhuan Zhōngguó cài · I like Chinese food",,,,,,,2026-07-17,,
+c019,vocab,忙,"**busy**
+
+*你今天忙吗？*
+máng · 你今天忙吗 Nǐ jīntiān máng ma · Are you busy today",,,,,,,2026-07-17,,
+c020,vocab,累,"**tired**
+
+*我有点累。*
+lèi · 我有点累 Wǒ yǒudiǎn lèi · I'm a bit tired",,,,,,,2026-07-17,,
+c021,vocab,高兴,"**happy; glad**
+
+*认识你很高兴。*
+gāoxìng · 认识你很高兴 Rènshi nǐ hěn gāoxìng · Nice to meet you",,,,,,,2026-07-17,,
+c022,vocab,漂亮,"**pretty; beautiful**
+
+*这里很漂亮。*
+piàoliang · 这里很漂亮 Zhèlǐ hěn piàoliang · It's beautiful here",,,,,,,2026-07-17,,
+c023,vocab,知道,"**to know (a fact)**
+
+*我不知道。*
+zhīdào · 我不知道 Wǒ bù zhīdào · I don't know",,,,,,,2026-07-17,,
+c024,vocab,觉得,"**to think; to feel**
+
+*我觉得很好。*
+juéde · 我觉得很好 Wǒ juéde hěn hǎo · I think it's good",,,,,,,2026-07-17,,
+c025,vocab,帮助,"**to help; help**
+
+*谢谢你的帮助。*
+bāngzhù · 谢谢你的帮助 Xièxie nǐ de bāngzhù · Thanks for your help",,,,,,,2026-07-17,,
+c026,vocab,问题,"**question; problem**
+
+*我有一个问题。*
+wèntí · 我有一个问题 Wǒ yǒu yí ge wèntí · I have a question",,,,,,,2026-07-17,,
+c027,vocab,一起,"**together**
+
+*我们一起去吧。*
+yìqǐ · 我们一起去吧 Wǒmen yìqǐ qù ba · Let's go together",,,,,,,2026-07-17,,
+c028,vocab,还,"**still; also**
+
+*我还想吃一点。*
+hái · 我还想吃一点 Wǒ hái xiǎng chī yìdiǎn · I still want to eat a little",,,,,,,2026-07-17,,
+c029,vocab,都,"**all; both**
+
+*我们都是学生。*
+dōu · 我们都是学生 Wǒmen dōu shì xuésheng · We are all students",,,,,,,2026-07-17,,
+c030,vocab,天气,"**weather**
+
+*今天天气很好。*
+tiānqì · 今天天气很好 Jīntiān tiānqì hěn hǎo · The weather is nice today",,,,,,,2026-07-17,,
+c031,grammar,你是学生吗？,"**吗 → turns a statement into a yes/no question**
+
+*你今天忙吗？*
+Put 吗 (ma) at the end of a statement to ask yes/no. Front: Nǐ shì xuésheng ma · Are you a student? · Example: Are you busy today?",,,,,,,2026-07-17,,
+c032,grammar,我不喝咖啡。,"**不 vs 没 → 不 negates the present, habits, and the future; 没 negates a past/completed action and 有**
+
+*我昨天没去。*
+bù vs méi. Front: Wǒ bù hē kāfēi · I don't drink coffee. · Example: Wǒ zuótiān méi qù · I didn't go yesterday.",,,,,,,2026-07-17,,
+c033,grammar,我吃了。,"**了 after a verb → marks a completed or changed action**
+
+*我买了两个苹果。*
+le. Front: Wǒ chī le · I ate / I've eaten. · Example: Wǒ mǎi le liǎng ge píngguǒ · I bought two apples.",,,,,,,2026-07-17,,
+c034,grammar,我想去中国。,"**想 + verb → want to (do something)**
+
+*你想做什么？*
+xiǎng + verb. Front: Wǒ xiǎng qù Zhōngguó · I want to go to China. · Example: Nǐ xiǎng zuò shénme? · What do you want to do?",,,,,,,2026-07-17,,
+c035,grammar,我会说中文。,"**会 = a learned skill; 能 / 可以 = can (be able / allowed) in a given situation**
+
+*我今天不能来。*
+huì vs néng/kěyǐ. Front: Wǒ huì shuō Zhōngwén · I can speak Chinese (learned). · Example: Wǒ jīntiān bù néng lái · I can't come today.",,,,,,,2026-07-17,,
+c036,grammar,这是我的书。,"**的 → links a modifier to a noun (possession or description)**
+
+*红色的车是我的。*
+de. Front: Zhè shì wǒ de shū · This is my book. · Example: Hóngsè de chē shì wǒ de · The red car is mine.",,,,,,,2026-07-17,,
+c037,grammar,太贵了！,"**太……了 → too… (excessive degree)**
+
+*这个太大了。*
+tài…le. Front: Tài guì le · Too expensive! · Example: Zhège tài dà le · This is too big.",,,,,,,2026-07-17,,
+c038,grammar,因为下雨，所以我没去。,"**因为……所以…… → because…, (so)…**
+
+*因为我很忙，所以没吃饭。*
+yīnwèi…suǒyǐ. Front: Because it rained, I didn't go. · Example: Because I was busy, I didn't eat.",,,,,,,2026-07-17,,
+c039,grammar,我有三个朋友。,"**个 → the general measure word between a number and a noun**
+
+*我想买两个。*
+ge. Front: Wǒ yǒu sān ge péngyou · I have three friends. · Example: Wǒ xiǎng mǎi liǎng ge · I want to buy two.",,,,,,,2026-07-17,,
+c040,grammar,我在家。,"**在 + place → to be located at**
+
+*老师在学校。*
+zài + place. Front: Wǒ zài jiā · I'm at home. · Example: Lǎoshī zài xuéxiào · The teacher is at school.",,,,,,,2026-07-17,,
+c041,grammar,桌子上有书。,"**有 → to have; there is / there are (existence)**
+
+*我有两个中国朋友。*
+yǒu. Front: Zhuōzi shàng yǒu shū · There are books on the table. · Example: Wǒ yǒu liǎng ge Zhōngguó péngyou · I have two Chinese friends.",,,,,,,2026-07-17,,
+c042,grammar,我想喝一点儿水。,"**一点儿 → a little / a bit (small amount)**
+
+*给我一点儿时间。*
+yìdiǎnr. Front: Wǒ xiǎng hē yìdiǎnr shuǐ · I want to drink a little water. · Example: Gěi wǒ yìdiǎnr shíjiān · Give me a little time.",,,,,,,2026-07-17,,

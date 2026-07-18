@@ -228,6 +228,11 @@ laptop/desktop step; the Sheets mobile app can't import). The one setting that
 matters there is **“Convert text to numbers, dates, and formulas” → No**, or
 Google turns entries like `1/2` into dates.
 
+Ready-made decks live in [`decks/`](./decks): `starter-dutch.csv` (the deck the
+example Sheet ships with) and `starter-chinese.csv` (basic Mandarin vocab +
+grammar). After importing the Chinese one, set `target_language` to `zh-CN` in
+**⚙ Settings** so the right voice reads your cards.
+
 ### Markdown
 `front_side`, `back_side`, and `notes` render Markdown: `**bold**`, `_italic_`,
 `` `code` ``, `# headings`, `- bullet lists`, `1.` numbered lists, `[links](https://…)`,
