@@ -67,6 +67,8 @@ var DEFAULT_CONFIG = [
     'Hands-free autoplay: "translate" (word, then meaning, then example) or "target" (word + example only).'],
   ['native_language', '',
     'Your own language, for spoken meanings in hands-free translate mode. Blank = use the device language.'],
+  ['update_check', 'yes',
+    'Check for app updates on startup? Sends one anonymous ping a day (random id + app version, nothing else) that also lets the author count active users. yes / no'],
   ['webapp_url', '',
     'The /exec link of your own deployment. Leave blank to auto-detect.']
 ];

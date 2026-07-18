@@ -61,7 +61,10 @@ the Sheet *and* the app in one click, no CLI. See [Deploy your own](#deploy-your
 ## Deploy your own
 
 Two ways to get your own copy. Either way it ends up **entirely yours** — your
-Sheet, your script, your Google account. Nothing reports back here.
+Sheet, your script, your Google account. Nothing reports back here except an
+optional, anonymous once-a-day version check — see
+[Updates](#updates--the-version-check) for exactly what it sends and how to
+turn it off.
 
 ### Option A — copy the example Sheet (no CLI) — recommended
 
@@ -238,6 +241,7 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 | `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
 | `autoplay_speak` | `translate` | Hands-free mode: `translate` (word → meaning → example) or `target` (word + example only). |
 | `native_language` | *(blank)* | Your own language, for spoken meanings in hands-free `translate` mode. Blank = use your device's language. |
+| `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). `yes` / `no` |
 | `webapp_url` | *(blank)* | The `/exec` link of your deployment, used by **🎴 Flashcards → Open the app ↗**. Blank = auto-detect. |
 
 ## Hearing your cards 🔊
@@ -292,6 +296,26 @@ right thing on its own.
 - Tune in `Code.js`: `BOX_INTERVALS`, `NEW_PER_SESSION`, `KNOWN_START_BOX`,
   `PRACTICE_LIMIT`.
 
+## Updates & the version check
+
+Your copy never updates itself — you own the code, and nothing changes unless
+you change it. Instead, once a day the app asks this project's endpoint whether
+a newer version exists. If so, the home screen shows a small
+**⬆️ Update available** link to [`UPGRADE.md`](./UPGRADE.md), which walks you
+through updating in a couple of minutes (your cards and progress are never
+touched).
+
+That request is also the project's only usage signal — it's how the author
+knows roughly how many people use the app. Full disclosure of what it involves:
+
+- **What's sent:** the app version and a random id your browser made up
+  (so two pings can be recognized as the same copy). That's all.
+- **What's not sent:** nothing about you or your deck — no account, no email,
+  no card contents, no study data. The endpoint is an Apps Script web app,
+  which doesn't even expose callers' IP addresses to its owner.
+- **How to turn it off:** set `update_check` to `no` in the `config` tab.
+  You'll stop seeing update hints, and no ping is ever sent.
+
 ## Project files
 
 | file | purpose |
@@ -301,7 +325,9 @@ right thing on its own.
 | `Seed.js` | starter deck + `seedCards` / `resetAndReseed` |
 | `appsscript.json` | Apps Script manifest (timezone + web-app access) |
 | `.claspignore` | limits what clasp pushes to the script |
+| `UPGRADE.md` | how to update your copy when a new version is out |
 | `.claspignore.public`, `push-public.sh` | maintainer-only: sync this repo to the [example Sheet][example-sheet]'s script. Not needed to run or deploy the app — ignore them in your own copy. |
+| `collector/` | maintainer-only: the endpoint behind the version check. Never pushed to app copies — ignore it in your own copy. |
 
 ## License
 
