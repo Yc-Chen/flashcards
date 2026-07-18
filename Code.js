@@ -8,6 +8,12 @@
 
 // ---- Tunable constants -----------------------------------------------------
 
+// The released version of this app. Single source of truth: the web app shows
+// it in ⚙ Settings, the Sheet menu shows it in About, and the daily update
+// check compares it against the collector's `latest_version`. Bump it here (and
+// nowhere else) when you release — see collector/README.md.
+var APP_VERSION = '1.0.0';
+
 var SHEET_NAME = 'cards';
 
 // Leitner boxes 1..5 and how many days until a card in each box is due again.
@@ -99,6 +105,7 @@ function onOpen() {
     .addItem('Reset & reload starter deck…', 'menuResetAndReseed_')
     .addSeparator()
     .addItem('View on GitHub ↗', 'menuGitHub_')
+    .addItem('About Flashcards (v' + APP_VERSION + ')', 'menuAbout_')
     .addToUi();
 }
 
@@ -169,6 +176,33 @@ function menuGitHub_() {
         'font-weight:700;padding:10px 16px;border-radius:10px">View on GitHub ↗</a></p>' +
     '</div>'
   ).setWidth(320).setHeight(130);
+  SpreadsheetApp.getUi().showModalDialog(html, '🎴 Flashcards');
+}
+
+/**
+ * Menu: which version this copy is running, and how to update it.
+ *
+ * The version is worth surfacing here and not only in the app because updating
+ * is a Sheet-side job (Extensions → Apps Script → redeploy), so this is where
+ * someone stands when they need to know what they've got.
+ */
+function menuAbout_() {
+  var repo = 'https://github.com/Yc-Chen/flashcards';
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font:14px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 4px">' +
+      '<p style="margin:0 0 6px;font-size:16px"><strong>🎴 Flashcards</strong></p>' +
+      '<p style="margin:0 0 14px;color:#5f6368">Version <strong>' + APP_VERSION + '</strong></p>' +
+      '<p style="margin:0 0 14px">This copy is yours — it never updates itself. ' +
+        'The app tells you on its home screen when a newer version is out.</p>' +
+      '<p style="margin:0">' +
+        '<a href="' + repo + '/blob/main/UPGRADE.md" target="_blank" rel="noopener" ' +
+          'style="display:inline-block;background:#4f8cff;color:#fff;text-decoration:none;' +
+          'font-weight:700;padding:9px 14px;border-radius:10px">How to update ↗</a>' +
+        '&nbsp;&nbsp;<a href="' + repo + '" target="_blank" rel="noopener" ' +
+          'style="color:#4f8cff;text-decoration:none;font-weight:600">GitHub ↗</a>' +
+      '</p>' +
+    '</div>'
+  ).setWidth(340).setHeight(210);
   SpreadsheetApp.getUi().showModalDialog(html, '🎴 Flashcards');
 }
 
@@ -438,6 +472,7 @@ function getSession() {
     // the "open the Sheet" links — landing on `cards` matters for import, where
     // "Append to current sheet" targets whatever tab happens to be active.
     cardsUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() + '#gid=' + data.sheet.getSheetId(),
+    version: APP_VERSION,
     // Settings from the `config` tab. The client caches this for the page's
     // lifetime, which is why getWeakCards() doesn't need to return it too.
     config: readConfig_(),

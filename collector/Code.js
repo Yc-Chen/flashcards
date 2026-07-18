@@ -26,7 +26,7 @@ var SETTINGS_SHEET = 'settings';
 var SETTINGS_HEADERS = ['key', 'value', 'description'];
 var SETTINGS_DEFAULTS = [
   ['latest_version', '1.0.0',
-    'The newest released app version. Bump this (to match APP_VERSION in the repo\'s Index.html) when you release — every copy older than this shows the update hint.'],
+    'The newest released app version. Bump this (to match APP_VERSION in the repo\'s Code.js) when you release — every copy older than this shows the update hint.'],
   ['release_url', 'https://github.com/Yc-Chen/flashcards/blob/main/UPGRADE.md',
     'Where the update hint links to.']
 ];

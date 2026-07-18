@@ -25,7 +25,9 @@ the app: neither `.claspignore` nor `.claspignore.public` pushes this directory.
 
 ## Releasing a new version
 
-1. Bump `APP_VERSION` in `Index.html`, push to both script projects.
+1. Bump `APP_VERSION` at the top of `Code.js`, push to both script projects.
+   (It's the only place the version is written; the app and the Sheet's
+   **About Flashcards** menu both read it from there.)
 2. Set `latest_version` in the collector Sheet's `settings` tab to the same
    number (no redeploy needed — it's read per request).
 3. Every copy still on an older version shows "⬆️ Update available" linking to

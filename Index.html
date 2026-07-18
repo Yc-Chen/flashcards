@@ -418,6 +418,7 @@
         <button class="btn-ghost" onclick="closeSettings()">Cancel</button>
         <button class="btn-primary" id="settings-save-btn" onclick="saveSettings()">Save</button>
       </div>
+      <p class="note" style="text-align:center;margin-top:12px" id="settings-version"></p>
     </div>
   </div>
 
@@ -558,7 +559,9 @@
     // (the author counts pings), which is why the config tab documents it and
     // `update_check: no` turns it off entirely. Fails silently: an offline
     // device or a blocked request must never bother the user.
-    var APP_VERSION = '1.0.0';
+    // The running version comes from APP_VERSION in Code.js via getSession —
+    // one constant, so the Sheet's About menu and this check can never disagree.
+    function appVersion_() { return (sessionData && sessionData.version) || ''; }
     // The /exec URL of the author's collector web app. Empty disables the
     // check (and the ping) completely — e.g. in a fork that strips telemetry.
     var UPDATE_CHECK_URL = 'https://script.google.com/macros/s/AKfycbz3mkJpSj_ciNcVqeDVSn1XKLxBcSKJ3hdvf6YTDPZggGs9mIBAyKvVpNnoxcDpnQ2C/exec';
@@ -573,7 +576,7 @@
     }
 
     function showUpdateHint_(info) {
-      if (!info || !info.latest || !verNewer_(info.latest, APP_VERSION)) return;
+      if (!info || !info.latest || !verNewer_(info.latest, appVersion_())) return;
       var el = document.getElementById('update-hint');
       el.href = info.url || 'https://github.com/Yc-Chen/flashcards/blob/main/UPGRADE.md';
       el.textContent = '⬆️ Update available (v' + info.latest + ') — how to update ↗';
@@ -592,6 +595,9 @@
       if (updateChecked || !UPDATE_CHECK_URL || !window.fetch) return;
       updateChecked = true;
       if (String(cfg_('update_check', 'yes')).toLowerCase() !== 'yes') return;
+      // A deployment too old to report its version can't be compared against
+      // `latest` — say nothing rather than guess, and send no ping.
+      if (!appVersion_()) return;
 
       var id = lsGet_('fc_install_id');
       if (!id) {
@@ -607,7 +613,7 @@
         return;
       }
 
-      fetch(UPDATE_CHECK_URL + '?v=' + encodeURIComponent(APP_VERSION) +
+      fetch(UPDATE_CHECK_URL + '?v=' + encodeURIComponent(appVersion_()) +
             '&id=' + encodeURIComponent(id))
         .then(function (r) { return r.json(); })
         .then(function (info) {
@@ -1171,6 +1177,9 @@
       // A fork that blanked UPDATE_CHECK_URL sends nothing regardless — don't
       // offer a switch for a feature that isn't there.
       document.getElementById('set-update-wrap').classList.toggle('hidden', !UPDATE_CHECK_URL);
+      var v = appVersion_();
+      document.getElementById('settings-version').textContent =
+        v ? '🎴 Flashcards · version ' + v : '';
       document.getElementById('settings-msg').textContent = '';
       document.getElementById('settings').classList.remove('hidden');
     }

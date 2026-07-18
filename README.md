@@ -299,8 +299,10 @@ right thing on its own.
 ## Updates & the version check
 
 Your copy never updates itself — you own the code, and nothing changes unless
-you change it. Instead, once a day the app asks this project's endpoint whether
-a newer version exists. If so, the home screen shows a small
+you change it. The version you're running is shown at the bottom of **⚙
+Settings** in the app, and in the Sheet's **🎴 Flashcards → About Flashcards**
+menu. Once a day the app asks this project's endpoint whether a newer version
+exists. If so, the home screen shows a small
 **⬆️ Update available** link to [`UPGRADE.md`](./UPGRADE.md), which walks you
 through updating in a couple of minutes (your cards and progress are never
 touched).

@@ -3,6 +3,9 @@
 Your copy is fully yours — updates never happen automatically. When the home
 screen shows **⬆️ Update available**, this page is how you get the new version.
 
+**Which version am I on?** The app shows it at the bottom of **⚙ Settings**, and
+the Sheet shows it in the **🎴 Flashcards → About Flashcards** menu.
+
 **Your cards and progress are safe either way.** Updating only replaces code;
 the `cards` and `config` tabs are never touched, and the app self-heals any new
 columns or settings a release introduces.
