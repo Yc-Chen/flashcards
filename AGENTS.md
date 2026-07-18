@@ -71,19 +71,17 @@ deploying account**. On first open they'll get the "unverified app" consent
 screen (gate #3) — Advanced → Go to Flashcards → Allow. This one-time step
 authorizes the script's scopes.
 
-### 6. Seed the starter deck — [HUMAN], simplest via the menu
-The bound script adds a **🎴 Flashcards** menu to the Sheet (via `onOpen`).
-Ask the user to open the Sheet (Extensions is not needed) and click
-**🎴 Flashcards → Load starter deck**. They may get a one-time authorization
-prompt on first click — same "unverified app" flow as gate #3.
-
-Alternative (**[AGENT]**, only if access is not `MYSELF`): hit the URL directly.
-```bash
-curl -L "https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?action=seed"
-```
-`doGet` runs `seedCards()` for `?action=seed`. This only works **after** the app
-is authorized (step 5), and under the default `MYSELF` access an unauthenticated
-`curl` bounces to a login page — so the menu path above is the reliable one.
+### 6. Load the starter deck — [HUMAN], via File → Import
+There is no seeding code — the starter deck ships as
+[`decks/starter-dutch.csv`](./decks/starter-dutch.csv), loaded with Google
+Sheets' own importer, which is browser-only. After the first open (step 5)
+has created the empty `cards` tab, ask the user to: open the Sheet, select
+the `cards` tab, **File → Import → Upload** the CSV, import location
+**Replace current sheet** (the CSV brings its own header row), and
+**"Convert text to numbers, dates, and formulas" → No**. The same rules as
+"Import path" below apply. **🎴 Flashcards → Check Sheet health** (in the
+Sheet's menu, added by `onOpen`) then confirms the tab and column names
+survived the import.
 
 ### 7. Redeploy after later code changes — [AGENT]
 Reuse the same deployment ID so the URL (and any Home Screen icon) stays stable:
@@ -98,7 +96,7 @@ into the deploying account. Your browser tools are almost certainly a different
 account and will show "unable to open the file." **Do not treat that as a
 deployment failure.** Confirm success by:
 - checking `clasp deploy` / `clasp redeploy` exited 0 and printed a deployment ID, and
-- asking the user to open the `/exec` URL and confirm the app loads and the deck seeded.
+- asking the user to open the `/exec` URL and confirm the app loads and shows their deck.
 
 ## Access model
 `appsscript.json` → `webapp.access`:
@@ -110,16 +108,19 @@ The app always runs as the deploying user and only ever touches that user's own
 Sheet, regardless of access level.
 
 ## Project files (what gets pushed)
-`.claspignore` limits the push to four files:
+`.claspignore` limits the push to three files:
 - `Code.js` — backend: `doGet`, Leitner logic, sheet I/O, the
-  `getSession` / `getWeakCards` / `gradeCard` / `updateCard` API. Also handles
-  `?action=seed`. `getWeakCards` returns low-box cards for the schedule-neutral
-  practice drill (the client grades them without writing back). Also owns the
-  `config` tab (`readConfig_`) and `resetForFork`.
+  `getSession` / `getWeakCards` / `gradeCard` / `updateCard` API.
+  `getWeakCards` returns low-box cards for the schedule-neutral practice
+  drill (the client grades them without writing back). Also owns the `config`
+  tab (`readConfig_`), `resetForFork`, and the menu's `checkSheetHealth`
+  layout diagnostic.
 - `Index.html` — the entire UI (inline CSS/JS + a small Markdown renderer;
   CDN scripts are blocked in the Apps Script sandbox).
-- `Seed.js` — starter deck + `seedCards` / `resetAndReseed`.
 - `appsscript.json` — manifest (timezone + web-app access).
+
+Not pushed but part of the product: `decks/` holds starter decks as plain CSV
+(loaded via **File → Import**, never via code).
 
 Tunables live at the top of `Code.js`: `BOX_INTERVALS`, `MAX_BOX`,
 `KNOWN_START_BOX`, `NEW_PER_SESSION`, `PRACTICE_LIMIT`, `FLAG_MARK`.
@@ -160,7 +161,9 @@ relying on that.
 Generating a deck is the one part of this an agent can do end-to-end. The app has
 **no CSV importer** — you produce a CSV, the user imports it into the `cards` tab
 with Google Sheets' built-in **File → Import**. The Sheet is the database, so
-that import *is* the load.
+that import *is* the load. (The starter deck itself ships this way:
+[`decks/starter-dutch.csv`](./decks/starter-dutch.csv) — a working example of
+everything below.)
 
 ### Column reference
 
@@ -228,7 +231,8 @@ Sheets' importer is browser-only; you cannot do this step for them.
    current sheet** (fresh start — destroys existing cards).
 3. **"Convert text to numbers, dates, and formulas" → No** (see above).
 4. If replacing, confirm the header row survived — `ensureSchema_()` refills only
-   *empty* header cells, so a mangled header stays mangled.
+   *empty* header cells, so a mangled header stays mangled. The menu's
+   **🎴 Flashcards → Check Sheet health** reports any tab/column-name mismatch.
 
 ### Writing cards that are actually good
 - **One fact per card.** If `back_side` has two unrelated senses, make two cards.

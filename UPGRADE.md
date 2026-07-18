@@ -19,9 +19,8 @@ Takes about two minutes:
    (open the raw link, select all, copy, paste over the old contents):
    - `Code.gs` ← [`Code.js`](https://raw.githubusercontent.com/Yc-Chen/flashcards/main/Code.js)
    - `Index.html` ← [`Index.html`](https://raw.githubusercontent.com/Yc-Chen/flashcards/main/Index.html)
-   - `Seed.gs` ← [`Seed.js`](https://raw.githubusercontent.com/Yc-Chen/flashcards/main/Seed.js)
 
-   (The editor shows `.gs` where the repo says `.js` — same files.)
+   (The editor shows `.gs` where the repo says `.js` — same file.)
 3. Save (💾 or Ctrl/Cmd-S).
 4. **Deploy → Manage deployments → ✏️ (edit) → Version: New version → Deploy.**
    This is the step people forget: without it the app keeps serving the old

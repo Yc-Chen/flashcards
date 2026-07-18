@@ -81,11 +81,7 @@ var DEFAULT_CONFIG = [
 
 // ---- Web app entry point ---------------------------------------------------
 
-function doGet(e) {
-  // One-off maintenance action: open <url>?action=seed to load the starter deck.
-  if (e && e.parameter && e.parameter.action === 'seed') {
-    return ContentService.createTextOutput(seedCards());
-  }
+function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('Flashcards')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover')
@@ -93,16 +89,15 @@ function doGet(e) {
 }
 
 // ---- Spreadsheet menu ------------------------------------------------------
-// Runs when the bound Sheet is opened; adds a "🎴 Flashcards" menu so the deck
-// can be seeded (and the app deployed) without touching the Apps Script editor.
+// Runs when the bound Sheet is opened; adds a "🎴 Flashcards" menu so the app
+// can be opened (and the Sheet checked) without touching the Apps Script editor.
 
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('🎴 Flashcards')
     .addItem('Open the app ↗', 'menuOpenApp_')
     .addSeparator()
-    .addItem('Load starter deck', 'menuSeed_')
-    .addItem('Reset & reload starter deck…', 'menuResetAndReseed_')
+    .addItem('Check Sheet health', 'menuCheckSheet_')
     .addSeparator()
     .addItem('View on GitHub ↗', 'menuGitHub_')
     .addItem('About Flashcards (v' + APP_VERSION + ')', 'menuAbout_')
@@ -148,21 +143,64 @@ function menuOpenApp_() {
   ui.showModalDialog(html, '🎴 Flashcards');
 }
 
-/** Menu: seed the starter deck (no-op if the sheet already has cards). */
-function menuSeed_() {
-  SpreadsheetApp.getUi().alert('Flashcards', seedCards(), SpreadsheetApp.getUi().ButtonSet.OK);
+/** Menu: report whether the tab and column names match what the code expects. */
+function menuCheckSheet_() {
+  SpreadsheetApp.getUi().alert('🎴 Sheet health', checkSheetHealth(), SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
-/** Menu: wipe the `cards` sheet and reload the starter deck (asks first). */
-function menuResetAndReseed_() {
-  var ui = SpreadsheetApp.getUi();
-  var resp = ui.alert(
-    'Reset & reload starter deck',
-    'This DELETES everything in the "cards" sheet and reloads the starter deck. Continue?',
-    ui.ButtonSet.YES_NO);
-  if (resp === ui.Button.YES) {
-    ui.alert('Flashcards', resetAndReseed(), ui.ButtonSet.OK);
+/**
+ * Read-only sanity check of the spreadsheet layout: are the `cards` and
+ * `config` tabs there, and does every header cell say what the code expects?
+ * Reads and writes are positional, so a renamed or reordered column silently
+ * lands data in the wrong place — this is the diagnostic for that, typically
+ * after a File → Import with "Replace current sheet" mangled the header.
+ *
+ * Deliberately fixes nothing: ensureSchema_ already fills EMPTY header cells
+ * on every app load, so what this mostly catches is a wrong (non-empty)
+ * label — and whether the label or the data underneath it should move is a
+ * call only the owner can make.
+ */
+function checkSheetHealth() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var problems = [];
+
+  var cards = ss.getSheetByName(SHEET_NAME);
+  if (!cards) {
+    problems.push('❌ No "' + SHEET_NAME + '" tab found. If your cards live under ' +
+      'another name, rename that tab to "' + SHEET_NAME + '" — otherwise the app ' +
+      'creates an empty one on next load.');
+  } else {
+    problems = problems.concat(checkHeaderRow_(cards, HEADERS));
   }
+
+  var config = ss.getSheetByName(CONFIG_SHEET_NAME);
+  if (!config) {
+    problems.push('⚠️ No "' + CONFIG_SHEET_NAME + '" tab — the app recreates it ' +
+      'with defaults on next load, so this fixes itself.');
+  } else {
+    problems = problems.concat(checkHeaderRow_(config, CONFIG_HEADERS));
+  }
+
+  if (problems.length) return problems.join('\n\n');
+  var rows = cards.getLastRow() - 1;
+  return '✅ All good.\n\n"' + SHEET_NAME + '" and "' + CONFIG_SHEET_NAME +
+    '" tabs found and every column name is correct. ' +
+    rows + ' card row' + (rows === 1 ? '' : 's') + '.';
+}
+
+/** Compares a sheet's header row against `expected`; returns problem strings. */
+function checkHeaderRow_(sheet, expected) {
+  var problems = [];
+  var width = Math.min(sheet.getMaxColumns(), expected.length);
+  var header = width > 0 ? sheet.getRange(1, 1, 1, width).getValues()[0] : [];
+  for (var i = 0; i < expected.length; i++) {
+    var got = i < width ? String(header[i]).trim() : '';
+    if (got === expected[i]) continue;
+    problems.push('❌ "' + sheet.getName() + '" tab, column ' +
+      String.fromCharCode(65 + i) + ': header is ' +
+      (got ? '"' + got + '"' : 'blank') + ' but should be "' + expected[i] + '".');
+  }
+  return problems;
 }
 
 /** Menu: pop a dialog with a link to the project's GitHub repo (setup + source). */

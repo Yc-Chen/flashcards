@@ -3,7 +3,6 @@
 !appsscript.json
 !Code.js
 !Index.html
-!Seed.js
 
 # One-off vocab-maintenance scripts (see AGENT.md "Vocab-update workflow").
 # Whitelist here so `clasp push` uploads them; delete the line + the file once

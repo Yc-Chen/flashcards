@@ -88,9 +88,11 @@ deck *and* the app in one step. You need only a Google account.
 7. Studying something other than Dutch? Set **`target_language`** in the
    **`config`** tab (see [Settings](#settings-config-tab)).
 
-The starter deck comes with the copy, so you can skip the seeding step. To start
-from an empty deck instead, clear the rows under the header in the `cards` tab
-(or use **🎴 Flashcards → Reset & reseed** to get the starter deck back).
+The starter deck comes with the copy, so there is nothing to load. To start from
+an empty deck instead, clear the rows under the header in the `cards` tab. (To
+get the starter deck back later, import
+[`decks/starter-dutch.csv`](./decks/starter-dutch.csv) — see
+[Adding your own cards](#adding-your-own-cards).)
 
 ### Option B — deploy from this repo with clasp
 
@@ -128,13 +130,17 @@ You'll need [Node.js](https://nodejs.org) and a Google account.
    The `deploy` command prints a deployment ID; your web-app URL is
    `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec`.
 
-4. **Load the starter deck:** open your new Sheet and click **🎴 Flashcards →
-   Load starter deck** (the menu is added automatically when the Sheet opens).
-   Authorize when prompted — it's your own script, so the "unverified" warning
-   is expected.
+4. **Use it:** open the web-app URL and authorize when prompted — it's your own
+   script, so the "unverified" warning is expected. The first load creates the
+   empty `cards` and `config` tabs. On iOS, tap **Share → Add to Home Screen**
+   for an app-like icon.
 
-5. **Use it:** open the web-app URL, and on iOS tap **Share → Add to Home
-   Screen** for an app-like icon.
+5. **Load the starter deck (optional):** in the Sheet, select the `cards` tab,
+   then **File → Import → Upload** → `decks/starter-dutch.csv` from your clone.
+   Import location **Replace current sheet** (the CSV brings its own header
+   row), and **"Convert text to numbers, dates, and formulas" → No**. Then
+   **🎴 Flashcards → Check Sheet health** confirms the import left the tab and
+   column names intact.
 
 To redeploy after changes, reuse the same deployment ID so the URL (and your
 Home Screen icon) stays stable:
@@ -206,6 +212,10 @@ Each card has four tools in the progress row (top right):
 The app self-heals the schema: on first load it adds any missing columns
 (`flag`, `exclude`) without touching your data. It does the same for the
 [`config` tab](#settings-config-tab), so both tabs appear on their own.
+Self-healing only fills *empty* header cells — it never overwrites a wrong
+label. If you suspect an import or edit broke the layout, run
+**🎴 Flashcards → Check Sheet health** in the Sheet: it reports exactly which
+tab or column names don't match what the app expects.
 
 ### Adding your own cards
 Add a row to the `cards` tab (laptop or phone). Fill `front_side`, `back_side`,
@@ -325,7 +335,7 @@ knows roughly how many people use the app. Full disclosure of what it involves:
 |------|---------|
 | `Code.js` | backend: `doGet`, Leitner logic, sheet I/O, the `getSession`/`getWeakCards`/`gradeCard`/`updateCard` API |
 | `Index.html` | the entire UI — inline CSS/JS + a small Markdown renderer |
-| `Seed.js` | starter deck + `seedCards` / `resetAndReseed` |
+| `decks/` | starter decks as plain CSV — load one via **File → Import** (see [Adding your own cards](#adding-your-own-cards)) |
 | `appsscript.json` | Apps Script manifest (timezone + web-app access) |
 | `.claspignore` | limits what clasp pushes to the script |
 | `UPGRADE.md` | how to update your copy when a new version is out |

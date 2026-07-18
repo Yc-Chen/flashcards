@@ -1,0 +1,321 @@
+id,type,front_side,back_side,notes,box,due,last_seen,right,wrong,added,flag,exclude
+1,vocab,het huis,"**the house**
+
+_Ik woon in een groot huis._
+I live in a big house.",het-word,,,,,,,,
+2,vocab,de man,"**the man**
+
+_De man leest een boek._
+The man is reading a book.",de-word,,,,,,,,
+3,vocab,de vrouw,"**the woman**
+
+_De vrouw drinkt koffie._
+The woman is drinking coffee.",de-word,,,,,,,,
+4,vocab,het kind,"**the child**
+
+_Het kind speelt buiten._
+The child is playing outside.",het-word; plural: kinderen,,,,,,,,
+5,vocab,de dag,"**the day**
+
+_Fijne dag!_
+Have a nice day!",de-word,,,,,,,,
+6,vocab,de nacht,"**the night**
+
+_Welterusten en goedenacht._
+Good night.",de-word,,,,,,,,
+7,vocab,het water,"**the water**
+
+_Mag ik een glas water?_
+May I have a glass of water?",het-word,,,,,,,,
+8,vocab,het brood,"**the bread**
+
+_Ik eet brood met kaas._
+I eat bread with cheese.",het-word,,,,,,,,
+9,vocab,de kaas,"**the cheese**
+
+_Nederlandse kaas is lekker._
+Dutch cheese is delicious.",de-word,,,,,,,,
+10,vocab,de koffie,"**the coffee**
+
+_Ik drink graag koffie._
+I like to drink coffee.",de-word,,,,,,,,
+11,vocab,de melk,"**the milk**
+
+_De melk is op._
+The milk is finished.",de-word,,,,,,,,
+12,vocab,het geld,"**the money**
+
+_Ik heb geen geld bij me._
+I don't have money on me.",het-word,,,,,,,,
+13,vocab,de tijd,"**the time**
+
+_Ik heb geen tijd._
+I don't have time.",de-word,,,,,,,,
+14,vocab,het werk,"**the work / job**
+
+_Ik ga naar mijn werk._
+I'm going to work.",het-word,,,,,,,,
+15,vocab,de school,"**the school**
+
+_De kinderen gaan naar school._
+The children go to school.",de-word,,,,,,,,
+16,vocab,de stad,"**the city**
+
+_Amsterdam is een mooie stad._
+Amsterdam is a beautiful city.",de-word; plural: steden,,,,,,,,
+17,vocab,het land,"**the country**
+
+_Nederland is een klein land._
+The Netherlands is a small country.",het-word,,,,,,,,
+18,vocab,de straat,"**the street**
+
+_Ik woon in deze straat._
+I live on this street.",de-word,,,,,,,,
+19,vocab,de auto,"**the car**
+
+_Mijn auto is kapot._
+My car is broken.",de-word,,,,,,,,
+20,vocab,de fiets,"**the bicycle**
+
+_Ik ga met de fiets._
+I go by bike.",de-word,,,,,,,,
+21,vocab,de trein,"**the train**
+
+_De trein is te laat._
+The train is late.",de-word,,,,,,,,
+22,vocab,het boek,"**the book**
+
+_Dit boek is interessant._
+This book is interesting.",het-word,,,,,,,,
+23,vocab,de vriend,"**the friend (m)**
+
+_Hij is mijn beste vriend._
+He is my best friend.",de-word; f: vriendin,,,,,,,,
+24,vocab,de familie,"**the family**
+
+_Mijn familie woont ver weg._
+My family lives far away.",de-word,,,,,,,,
+25,vocab,de moeder,"**the mother**
+
+_Mijn moeder kookt lekker._
+My mother cooks well.",de-word,,,,,,,,
+26,vocab,de vader,"**the father**
+
+_Mijn vader werkt hard._
+My father works hard.",de-word,,,,,,,,
+27,vocab,groot,"**big / large**
+
+_Dat is een groot probleem._
+That is a big problem.",adjective,,,,,,,,
+28,vocab,klein,"**small**
+
+_Ik heb een kleine vraag._
+I have a small question.",adjective,,,,,,,,
+29,vocab,goed,"**good**
+
+_Alles is goed._
+Everything is fine.",adjective/adverb,,,,,,,,
+30,vocab,slecht,"**bad**
+
+_Het weer is slecht._
+The weather is bad.",adjective,,,,,,,,
+31,vocab,mooi,"**beautiful / nice**
+
+_Wat een mooie dag!_
+What a beautiful day!",adjective,,,,,,,,
+32,vocab,nieuw,"**new**
+
+_Ik heb een nieuwe telefoon._
+I have a new phone.",adjective,,,,,,,,
+33,vocab,oud,"**old**
+
+_Dit is een oud gebouw._
+This is an old building.",adjective,,,,,,,,
+34,vocab,lekker,"**tasty / nice**
+
+_Het eten is erg lekker._
+The food is very tasty.",common Dutch word,,,,,,,,
+35,vocab,duur,"**expensive**
+
+_Deze jas is te duur._
+This coat is too expensive.",adjective,,,,,,,,
+36,vocab,goedkoop,"**cheap**
+
+_Dit is heel goedkoop._
+This is very cheap.",adjective,,,,,,,,
+37,vocab,snel,"**fast / quick**
+
+_Hij loopt heel snel._
+He walks very fast.",adjective/adverb,,,,,,,,
+38,vocab,langzaam,"**slow**
+
+_Rijd niet te langzaam._
+Don't drive too slowly.",adjective/adverb,,,,,,,,
+39,vocab,moeilijk,"**difficult**
+
+_Nederlands is niet moeilijk._
+Dutch is not difficult.",adjective,,,,,,,,
+40,vocab,makkelijk,"**easy**
+
+_Dat is makkelijk._
+That is easy.",also: gemakkelijk,,,,,,,,
+41,vocab,zijn,"**to be**
+
+_Ik ben moe._
+I am tired.",irregular: ben/bent/is/zijn,,,,,,,,
+42,vocab,hebben,"**to have**
+
+_Wij hebben een hond._
+We have a dog.",irregular: heb/hebt/heeft/hebben,,,,,,,,
+43,vocab,gaan,"**to go**
+
+_Ik ga naar huis._
+I'm going home.",irregular: ga/gaat/gaan,,,,,,,,
+44,vocab,komen,"**to come**
+
+_Zij komt morgen._
+She comes tomorrow.",irregular: kom/komt/komen,,,,,,,,
+45,vocab,doen,"**to do**
+
+_Wat doe je?_
+What are you doing?",irregular: doe/doet/doen,,,,,,,,
+46,vocab,maken,"**to make**
+
+_Ik maak het eten._
+I'm making the food.",regular verb,,,,,,,,
+47,vocab,zeggen,"**to say**
+
+_Wat zeg je?_
+What are you saying?",zei (past),,,,,,,,
+48,vocab,zien,"**to see**
+
+_Ik zie je later._
+I'll see you later.",zag (past),,,,,,,,
+49,vocab,weten,"**to know (a fact)**
+
+_Ik weet het niet._
+I don't know.",vs kennen (know a person),,,,,,,,
+50,vocab,kennen,"**to know (be familiar)**
+
+_Ik ken hem niet._
+I don't know him.",vs weten (know a fact),,,,,,,,
+51,vocab,willen,"**to want**
+
+_Ik wil naar huis._
+I want to go home.",modal verb,,,,,,,,
+52,vocab,kunnen,"**to be able to / can**
+
+_Kun je me helpen?_
+Can you help me?",modal verb,,,,,,,,
+53,vocab,moeten,"**to must / have to**
+
+_Ik moet werken._
+I have to work.",modal verb,,,,,,,,
+54,vocab,mogen,"**to be allowed to / may**
+
+_Mag ik binnenkomen?_
+May I come in?",modal verb,,,,,,,,
+55,vocab,eten,"**to eat**
+
+_Wij eten om zes uur._
+We eat at six o'clock.",at (past),,,,,,,,
+56,vocab,drinken,"**to drink**
+
+_Ik drink thee._
+I drink tea.",dronk (past),,,,,,,,
+57,vocab,werken,"**to work**
+
+_Ik werk in Amsterdam._
+I work in Amsterdam.",regular verb,,,,,,,,
+58,vocab,wonen,"**to live / reside**
+
+_Waar woon je?_
+Where do you live?",regular verb,,,,,,,,
+59,vocab,spreken,"**to speak**
+
+_Spreek je Nederlands?_
+Do you speak Dutch?",sprak (past),,,,,,,,
+60,vocab,begrijpen,"**to understand**
+
+_Ik begrijp het niet._
+I don't understand.",begreep (past),,,,,,,,
+61,vocab,vandaag,"**today**
+
+_Wat doen we vandaag?_
+What are we doing today?",time word,,,,,,,,
+62,vocab,morgen,"**tomorrow**
+
+_Tot morgen!_
+See you tomorrow!",also means 'morning',,,,,,,,
+63,vocab,gisteren,"**yesterday**
+
+_Ik was gisteren ziek._
+I was sick yesterday.",time word,,,,,,,,
+64,vocab,nu,"**now**
+
+_Ik kom nu._
+I'm coming now.",time word,,,,,,,,
+65,vocab,altijd,"**always**
+
+_Hij is altijd te laat._
+He is always late.",frequency,,,,,,,,
+66,vocab,nooit,"**never**
+
+_Ik drink nooit alcohol._
+I never drink alcohol.",frequency,,,,,,,,
+67,vocab,soms,"**sometimes**
+
+_Soms regent het._
+Sometimes it rains.",frequency,,,,,,,,
+68,vocab,vaak,"**often**
+
+_Ik ga vaak naar de markt._
+I often go to the market.",frequency,,,,,,,,
+69,vocab,hier,"**here**
+
+_Kom hier!_
+Come here!",place word,,,,,,,,
+70,vocab,daar,"**there**
+
+_Daar is het station._
+There is the station.",place word,,,,,,,,
+71,grammar,de / het,"**definite article 'the'**
+
+_het huis / de man_
+the house / the man","het for neuter nouns, de for common nouns; when unsure, guess de (majority)",,,,,,,,
+72,grammar,een,"**indefinite article 'a/an'**
+
+_een boek / een appel_
+a book / an apple",same for all nouns; no gender distinction,,,,,,,,
+73,grammar,word order: verb second,"**the finite verb comes in position 2**
+
+_Morgen ga ik naar Utrecht._
+Tomorrow I go to Utrecht.","'Morgen' fills slot 1, so subject 'ik' moves after the verb (inversion)",,,,,,,,
+74,grammar,negation: niet,"**'not' negates verbs/adjectives**
+
+_Ik ken hem niet._
+I don't know him.",niet usually goes at the end or before the word it negates,,,,,,,,
+75,grammar,negation: geen,"**'no / not a' negates indefinite nouns**
+
+_Ik heb geen tijd._
+I have no time.",use geen (not niet) before a noun with een or no article,,,,,,,,
+76,grammar,plural -en,"**most nouns add -en**
+
+_boek -> boeken; huis -> huizen_
+book -> books","watch spelling changes: s->z, f->v, vowel doubling",,,,,,,,
+77,grammar,plural -s,"**nouns ending in -el/-en/-er/-je take -s**
+
+_tafel -> tafels; meisje -> meisjes_
+table -> tables",also many loanwords take -s,,,,,,,,
+78,grammar,adjective + e,"**adjective gets -e before a noun**
+
+_de grote man / een groot huis_
+the big man / a big house",no -e with het-word + een (een groot huis); otherwise add -e,,,,,,,,
+79,grammar,er is / er zijn,"**'there is / there are'**
+
+_Er is een probleem._
+There is a problem.",'er' as dummy subject for existence,,,,,,,,
+80,grammar,modal + infinitief,"**modal verb sends the main verb to the end**
+
+_Ik wil een koffie drinken._
+I want to drink a coffee.",infinitive (drinken) goes to the end of the clause,,,,,,,,

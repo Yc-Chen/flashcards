@@ -1,6 +1,6 @@
 # Ignore file for the PUBLIC forkable project (used by ./push-public.sh).
 #
-# Deliberately NARROWER than .claspignore: it pushes only the four app sources
+# Deliberately NARROWER than .claspignore: it pushes only the three app sources
 # and never the one-off vocab-maintenance scripts. Those are private tooling and
 # must not land in a project strangers are going to copy. Do not add whitelist
 # lines here for maintenance scripts — that is what .claspignore is for.
@@ -8,4 +8,3 @@
 !appsscript.json
 !Code.js
 !Index.html
-!Seed.js
