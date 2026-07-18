@@ -241,7 +241,7 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 | `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
 | `autoplay_speak` | `translate` | Hands-free mode: `translate` (word → meaning → example) or `target` (word + example only). |
 | `native_language` | *(blank)* | Your own language, for spoken meanings in hands-free `translate` mode. Blank = use your device's language. |
-| `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). `yes` / `no` |
+| `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). Also in **⚙ Settings**. `yes` / `no` |
 | `webapp_url` | *(blank)* | The `/exec` link of your deployment, used by **🎴 Flashcards → Open the app ↗**. Blank = auto-detect. |
 
 ## Hearing your cards 🔊
@@ -313,8 +313,9 @@ knows roughly how many people use the app. Full disclosure of what it involves:
 - **What's not sent:** nothing about you or your deck — no account, no email,
   no card contents, no study data. The endpoint is an Apps Script web app,
   which doesn't even expose callers' IP addresses to its owner.
-- **How to turn it off:** set `update_check` to `no` in the `config` tab.
-  You'll stop seeing update hints, and no ping is ever sent.
+- **How to turn it off:** untick **Tell me when an update is available** in
+  **⚙ Settings** (or set `update_check` to `no` in the `config` tab). You'll
+  stop seeing update hints, and no ping is ever sent.
 
 ## Project files
 

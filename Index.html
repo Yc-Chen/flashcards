@@ -209,6 +209,8 @@
     .overlay select:focus, .overlay input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
     .overlay .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
     .overlay .row label { margin-top: 0; }
+    .overlay .section { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 4px; }
+    .overlay .note { color: var(--muted); font-size: 12.5px; line-height: 1.45; margin: 2px 0 0; }
     .overlay .steps { margin: 4px 0 0; padding-left: 1.2em; color: var(--muted); font-size: 14px; line-height: 1.5; }
     .overlay .steps li { margin: 4px 0; }
     .overlay .steps strong { color: var(--text); }
@@ -396,6 +398,19 @@
         <label for="set-native" style="margin-top:10px">Your language <span class="hint">for spoken meanings</span></label>
         <select id="set-native" onchange="onLangSelect('set-native','set-native-other')"></select>
         <input type="text" id="set-native-other" class="hidden" placeholder="Language tag, e.g. en-US">
+      </div>
+
+      <div class="section" id="set-update-wrap">
+        <div class="row">
+          <label for="set-updatecheck">Tell me when an update is available</label>
+          <input type="checkbox" id="set-updatecheck">
+        </div>
+        <p class="note">
+          Checks once a day for a newer version of the app. It sends only the
+          version you're running and a random id — never your cards, account or
+          study data. It's also how the author counts users; switch it off and
+          nothing is sent.
+        </p>
       </div>
 
       <div class="editor-msg" id="settings-msg"></div>
@@ -1151,6 +1166,11 @@
       document.getElementById('set-apmode').value =
         String(c.autoplay_speak || 'translate').toLowerCase() === 'target' ? 'target' : 'translate';
       onApModeChange();
+      document.getElementById('set-updatecheck').checked =
+        String(c.update_check == null ? 'yes' : c.update_check).toLowerCase() === 'yes';
+      // A fork that blanked UPDATE_CHECK_URL sends nothing regardless — don't
+      // offer a switch for a feature that isn't there.
+      document.getElementById('set-update-wrap').classList.toggle('hidden', !UPDATE_CHECK_URL);
       document.getElementById('settings-msg').textContent = '';
       document.getElementById('settings').classList.remove('hidden');
     }
@@ -1165,7 +1185,8 @@
         speech_rate: document.getElementById('set-rate').value,
         auto_speak: document.getElementById('set-autospeak').checked ? 'yes' : 'no',
         autoplay_speak: document.getElementById('set-apmode').value,
-        native_language: native
+        native_language: native,
+        update_check: document.getElementById('set-updatecheck').checked ? 'yes' : 'no'
       };
 
       var btn = document.getElementById('settings-save-btn');
@@ -1187,6 +1208,10 @@
         // values now, without a round-trip through getSession.
         keys.forEach(function (k) { sessionData.config[k] = updates[k]; });
         updateSubtitle_();
+        // Opting out means "stop telling me" — retire any hint already on screen.
+        if (updates.update_check !== 'yes') {
+          document.getElementById('update-hint').classList.add('hidden');
+        }
         closeSettings();
         showToast('Settings saved');
       }

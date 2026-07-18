@@ -140,7 +140,7 @@ there is nothing to set up and nothing to migrate.
 | `target_language` | `nl-NL` | The language being studied. BCP-47 tag. **This is the only thing to change for a non-Dutch deck.** |
 | `speech_rate` | `0.9` | Speaking speed. |
 | `auto_speak` | `yes` | Speak the example on reveal? |
-| `update_check` | `yes` | Daily anonymous version-check ping (random id + app version) to the author's collector endpoint. `no` disables it. |
+| `update_check` | `yes` | Daily anonymous version-check ping (random id + app version) to the author's collector endpoint. `no` disables it; also toggleable in the app's ⚙ Settings. |
 | `webapp_url` | *(blank)* | `/exec` link for the Sheet's "Open the app ↗" menu. Blank = auto-detect. |
 
 Reading it is deliberately failure-proof: `readConfig_()` catches everything and

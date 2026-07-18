@@ -304,7 +304,8 @@ function readConfig_() {
 // Config keys the app UI may write. `webapp_url` is deliberately excluded — it
 // is deploy/fork plumbing, and letting the in-app Settings screen change it would
 // be a footgun (point your own app at nowhere). It stays Sheet-only.
-var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak', 'autoplay_speak', 'native_language'];
+var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak', 'autoplay_speak',
+  'native_language', 'update_check'];
 
 /**
  * Writes one setting from the app's Settings screen. Whitelisted so the client
