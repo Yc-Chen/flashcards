@@ -63,6 +63,10 @@ var DEFAULT_CONFIG = [
     'Speaking speed. 0.5 = slow, 1 = normal.'],
   ['auto_speak', 'yes',
     'Speak the example sentence when you reveal an answer? yes / no'],
+  ['autoplay_speak', 'translate',
+    'Hands-free autoplay: "translate" (word, then meaning, then example) or "target" (word + example only).'],
+  ['native_language', '',
+    'Your own language, for spoken meanings in hands-free translate mode. Blank = use the device language.'],
   ['webapp_url', '',
     'The /exec link of your own deployment. Leave blank to auto-detect.']
 ];
@@ -92,8 +96,7 @@ function onOpen() {
     .addItem('Load starter deck', 'menuSeed_')
     .addItem('Reset & reload starter deck…', 'menuResetAndReseed_')
     .addSeparator()
-    .addItem('Make this copy my own…', 'menuResetForFork_')
-    .addItem('How to deploy as an app', 'menuDeployHelp_')
+    .addItem('View on GitHub ↗', 'menuGitHub_')
     .addToUi();
 }
 
@@ -118,9 +121,9 @@ function menuOpenApp_() {
   var url = getWebAppUrl_();
   if (!url) {
     ui.alert('Flashcards',
-      'No web-app URL yet. Deploy the script as a web app (see "How to deploy ' +
-      'as an app"), then paste the /exec link into the `webapp_url` row of the ' +
-      '"config" tab.',
+      'No web-app URL yet. Deploy the script as a web app, then paste the /exec ' +
+      'link into the `webapp_url` row of the "config" tab. Full deploy steps are ' +
+      'in the GitHub repo (see "View on GitHub ↗").',
       ui.ButtonSet.OK);
     return;
   }
@@ -153,34 +156,18 @@ function menuResetAndReseed_() {
   }
 }
 
-/** Menu: make a copied Sheet the copier's own (asks first — it wipes progress). */
-function menuResetForFork_() {
-  var ui = SpreadsheetApp.getUi();
-  var resp = ui.alert(
-    'Make this copy my own',
-    'Run this once on a Sheet you just copied.\n\n' +
-    'It clears the saved app URL (so "Open the app ↗" points at YOUR ' +
-    'deployment, not the original\'s) and RESETS ALL STUDY PROGRESS — box, due ' +
-    'date, stats and flags — so you start fresh.\n\n' +
-    'Your cards and your config settings are kept. Continue?',
-    ui.ButtonSet.YES_NO);
-  if (resp === ui.Button.YES) {
-    ui.alert('Flashcards', resetForFork(), ui.ButtonSet.OK);
-  }
-}
-
-/** Menu: show the one-time steps to deploy this Sheet's script as a web app. */
-function menuDeployHelp_() {
-  var msg =
-    'Deploy this as a phone/laptop web app:\n\n' +
-    '1. Extensions → Apps Script → Deploy → New deployment.\n' +
-    '2. Type: Web app. Execute as: Me. Who has access: your choice\n' +
-    '   (Only myself / Anyone). Click Deploy.\n' +
-    '3. Authorize when prompted — it is your own script, so the\n' +
-    '   "unverified app" warning is expected (Advanced → Go to …).\n' +
-    '4. Copy the Web app URL. On iOS: Share → Add to Home Screen.\n\n' +
-    'To load the starter deck, use the "Load starter deck" menu item above.';
-  SpreadsheetApp.getUi().alert('Flashcards — how to deploy', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+/** Menu: pop a dialog with a link to the project's GitHub repo (setup + source). */
+function menuGitHub_() {
+  var url = 'https://github.com/Yc-Chen/flashcards';
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 4px">' +
+      '<p style="margin:0 0 14px">Source code, setup and deploy instructions:</p>' +
+      '<p style="margin:0"><a href="' + url + '" target="_blank" rel="noopener" ' +
+        'style="display:inline-block;background:#4f8cff;color:#fff;text-decoration:none;' +
+        'font-weight:700;padding:10px 16px;border-radius:10px">View on GitHub ↗</a></p>' +
+    '</div>'
+  ).setWidth(320).setHeight(130);
+  SpreadsheetApp.getUi().showModalDialog(html, '🎴 Flashcards');
 }
 
 // ---- Sheet helpers ---------------------------------------------------------
@@ -315,7 +302,7 @@ function readConfig_() {
 // Config keys the app UI may write. `webapp_url` is deliberately excluded — it
 // is deploy/fork plumbing, and letting the in-app Settings screen change it would
 // be a footgun (point your own app at nowhere). It stays Sheet-only.
-var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak'];
+var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak', 'autoplay_speak', 'native_language'];
 
 /**
  * Writes one setting from the app's Settings screen. Whitelisted so the client
@@ -494,6 +481,24 @@ function getWeakCards(limit) {
 }
 
 /**
+ * Cards for the hands-free autoplay drill: every active (non-excluded) card,
+ * shuffled. Unlike getWeakCards this includes brand-new cards — listening is
+ * exactly when you want exposure to words you haven't studied yet. Purely for
+ * playback; nothing is written. The client re-calls this each loop for a fresh
+ * shuffle, so a cap keeps the payload sane on a big deck.
+ * @param {number} [limit] Max cards to return (defaults to 200).
+ * @return {Object} { cards: [clientCard, ...] } shuffled.
+ */
+function getAutoplayCards(limit) {
+  var cards = readCards_().cards.filter(function (c) {
+    return String(c.exclude || '').trim() === '';
+  });
+  shuffle_(cards);
+  var cap = limit || 200;
+  return { cards: cards.slice(0, cap).map(toClientCard_) };
+}
+
+/**
  * Grades one card and writes the new state back immediately.
  * @param {number} row      1-based sheet row of the card.
  * @param {boolean} correct Whether the user got it right.
@@ -585,8 +590,10 @@ function shuffle_(arr) {
 }
 
 /**
- * Makes a freshly-copied Sheet genuinely the copier's own. Run once, from the
- * "🎴 Flashcards → Make this copy my own…" menu, after copying a template.
+ * Makes a freshly-copied Sheet genuinely the copier's own. Run once, by hand
+ * from the Apps Script editor (Extensions → Apps Script → select resetForFork →
+ * Run), after copying a template. No longer surfaced in the 🎴 menu — copiers
+ * are guided to edit the Sheet directly (see README) — but kept as a shortcut.
  *
  * Copying a Sheet copies its cells, so a fork inherits both the original's
  * `webapp_url` (pointing "Open the app ↗" at someone else's deployment, which

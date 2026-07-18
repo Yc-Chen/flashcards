@@ -91,6 +91,10 @@
 
     /* Session */
     #session { flex: 1; display: flex; flex-direction: column; }
+    #autoplay { flex: 1; display: flex; flex-direction: column; }
+    #autoplay .card { min-height: 240px; }
+    .ap-count { flex: 1; text-align: center; font-size: 13px; color: var(--muted); }
+    .ap-hint { text-align: center; font-size: 13px; color: var(--muted); margin: 12px 0 0; }
     .progress {
       display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
     }
@@ -270,6 +274,7 @@
       <div class="boxbar" id="boxbar"></div>
       <button class="btn-primary" id="start-btn" onclick="startSession()">Start practice</button>
       <button class="btn-ghost" style="width:100%" id="practice-btn" onclick="startPractice()">Practice weak cards</button>
+      <button class="btn-ghost" style="width:100%" id="autoplay-btn" onclick="startAutoplay()">🎧 Autoplay (hands-free)</button>
       <button class="btn-ghost" style="width:100%" onclick="loadHome()">Refresh</button>
       <div id="flagged-line" class="flagged-line hidden"></div>
       <a class="sheet-link" onclick="openAddCards()">＋ Import cards from a file</a>
@@ -315,6 +320,25 @@
       </div>
     </div>
 
+    <!-- Autoplay (hands-free) -->
+    <div id="autoplay" class="hidden">
+      <div class="progress">
+        <button class="tool quit" id="ap-stop" title="Stop" onclick="stopAutoplay()">✕</button>
+        <div class="ap-count" id="ap-count">—</div>
+        <button class="tool" id="ap-pause" title="Pause / resume" onclick="toggleAutoplayPause()">⏸</button>
+      </div>
+      <div class="card">
+        <div class="badge" id="ap-badge"></div>
+        <div class="front md" id="ap-front"></div>
+        <div id="ap-answer" class="hidden" style="display:flex;flex-direction:column;align-items:center;gap:14px;width:100%">
+          <div class="divider"></div>
+          <div class="back md" id="ap-back"></div>
+          <div class="notes md" id="ap-notes"></div>
+        </div>
+      </div>
+      <p class="ap-hint" id="ap-hint">🎧 Hands-free · keep this screen on</p>
+    </div>
+
     <!-- Summary -->
     <div id="summary" class="center-msg hidden">
       <div class="big" id="summary-emoji">🎉</div>
@@ -348,7 +372,7 @@
     <div class="panel">
       <h3>Settings</h3>
       <label for="set-lang">Language spoken aloud</label>
-      <select id="set-lang" onchange="onLangSelect()"></select>
+      <select id="set-lang" onchange="onLangSelect('set-lang','set-lang-other')"></select>
       <input type="text" id="set-lang-other" class="hidden" placeholder="Language tag, e.g. pt-BR">
       <label for="set-rate" style="margin-top:12px">Speaking speed</label>
       <select id="set-rate">
@@ -360,6 +384,18 @@
         <label for="set-autospeak">Speak the example when I reveal an answer</label>
         <input type="checkbox" id="set-autospeak">
       </div>
+
+      <label for="set-apmode" style="margin-top:14px">Hands-free autoplay plays</label>
+      <select id="set-apmode" onchange="onApModeChange()">
+        <option value="translate">Word, then meaning, then example</option>
+        <option value="target">Target language only (word + example)</option>
+      </select>
+      <div id="set-native-wrap">
+        <label for="set-native" style="margin-top:10px">Your language <span class="hint">for spoken meanings</span></label>
+        <select id="set-native" onchange="onLangSelect('set-native','set-native-other')"></select>
+        <input type="text" id="set-native-other" class="hidden" placeholder="Language tag, e.g. en-US">
+      </div>
+
       <div class="editor-msg" id="settings-msg"></div>
       <div class="editor-actions">
         <button class="btn-ghost" onclick="closeSettings()">Cancel</button>
@@ -403,7 +439,7 @@
     var mode = 'study'; // 'study' = scheduled + writes; 'practice' = weak drill, no writes
 
     function show(id) {
-      ['loading', 'error', 'home', 'session', 'summary'].forEach(function (s) {
+      ['loading', 'error', 'home', 'session', 'autoplay', 'summary'].forEach(function (s) {
         document.getElementById(s).classList.toggle('hidden', s !== id);
       });
       // The settings gear only makes sense on home (it needs the loaded config).
@@ -763,6 +799,192 @@
       speak(speechPartsFor(c, revealed));
     }
 
+    // ---- Hands-free autoplay ----
+    // Plays cards aloud and auto-advances, for studying while driving/doing
+    // chores. Two modes (config `autoplay_speak`): "translate" speaks the word,
+    // a recall gap, the meaning in your language, then the example; "target"
+    // speaks only the word + example. Schedule-neutral — nothing is written.
+    //
+    // Caveat baked into the UX: mobile browsers suspend speech when the screen
+    // locks or the tab backgrounds (iOS especially), so we hold a screen wake
+    // lock and tell the user to keep the screen on. True locked-screen audio
+    // isn't possible with the Web Speech API.
+    var AP_RECALL_GAP = 2500, AP_TARGET_GAP = 1200, AP_CARD_GAP = 800;
+    var apActive = false, apPaused = false, apQueue = [], apIndex = 0, apTimer = null, apGen = 0;
+    var wakeLock = null;
+
+    // The meaning = the native-language gloss. Drop <em> (examples, spoken in
+    // the target language separately); prefer <strong> gloss, else all the text.
+    function meaningText_(src) {
+      var tmp = document.createElement('div');
+      tmp.innerHTML = md(src);
+      var ems = tmp.querySelectorAll('em');
+      for (var i = ems.length - 1; i >= 0; i--) ems[i].parentNode.removeChild(ems[i]);
+      var strong = tmp.querySelectorAll('strong');
+      if (strong.length) {
+        var out = [];
+        for (var j = 0; j < strong.length; j++) { var t = strong[j].textContent.trim(); if (t) out.push(t); }
+        return out.join('. ');
+      }
+      return tmp.textContent.trim();
+    }
+
+    // Pure: the ordered play steps for one card. {say,lang} or {wait:ms}; the
+    // first spoken answer part carries reveal:true so the UI can show the back.
+    function buildCardSteps(word, meaning, examples, mode, tLang, nLang) {
+      var steps = [];
+      if (word) steps.push({ say: word, lang: tLang });
+      var answer = [];
+      if (mode === 'translate') {
+        if (meaning) { answer.push({ wait: AP_RECALL_GAP }); answer.push({ say: meaning, lang: nLang }); }
+        for (var i = 0; i < examples.length; i++) answer.push({ say: examples[i], lang: tLang });
+      } else {
+        if (examples.length) answer.push({ wait: AP_TARGET_GAP });
+        for (var j = 0; j < examples.length; j++) answer.push({ say: examples[j], lang: tLang });
+      }
+      for (var k = 0; k < answer.length; k++) { if (answer[k].say) { answer[k].reveal = true; break; } }
+      return steps.concat(answer);
+    }
+
+    function apRenderCard(c) {
+      var badge = document.getElementById('ap-badge');
+      if (c.isNew) { badge.textContent = 'New card'; badge.className = 'badge new'; }
+      else { badge.textContent = (c.type ? c.type + ' · ' : '') + 'box ' + c.box; badge.className = 'badge'; }
+      document.getElementById('ap-front').innerHTML = md(c.front_side);
+      var back = document.getElementById('ap-back');
+      back.innerHTML = md(c.back_side);
+      back.style.display = (c.back_side && String(c.back_side).trim()) ? '' : 'none';
+      var notes = document.getElementById('ap-notes');
+      notes.innerHTML = md(c.notes);
+      notes.style.display = (c.notes && String(c.notes).trim()) ? '' : 'none';
+      document.getElementById('ap-answer').classList.add('hidden');
+      document.getElementById('ap-count').textContent = 'Card ' + (apIndex + 1) + ' of ' + apQueue.length;
+    }
+
+    // gen guards against stale chains: speechSynthesis.cancel() fires onend, and
+    // pause/resume/advance all cancel — without the token an old utterance's
+    // onend could advance a queue that's already moved on.
+    function apRunSteps(steps, i, gen, onDone) {
+      if (!apActive || apPaused || gen !== apGen) return;
+      if (i >= steps.length) { onDone(); return; }
+      var s = steps[i];
+      if (s.reveal) document.getElementById('ap-answer').classList.remove('hidden');
+      if (s.wait != null) {
+        apTimer = setTimeout(function () { apRunSteps(steps, i + 1, gen, onDone); }, s.wait);
+        return;
+      }
+      var u = new SpeechSynthesisUtterance(endStopped_(s.say));
+      u.lang = s.lang;
+      var v = pickVoice_(s.lang);
+      if (v) u.voice = v;
+      var rate = parseFloat(cfg_('speech_rate', '0.9'));
+      u.rate = (isFinite(rate) && rate > 0) ? rate : 0.9;
+      u.onend = u.onerror = function () { apRunSteps(steps, i + 1, gen, onDone); };
+      speechSynthesis.speak(u);
+    }
+
+    function apRunCard() {
+      if (!apActive) return;
+      if (apIndex >= apQueue.length) { fetchAutoplayBatch(false); return; } // loop: fresh shuffle
+      var gen = ++apGen;
+      var c = apQueue[apIndex];
+      apRenderCard(c);
+      var word = mdText_(c.front_side);
+      var meaning = meaningText_(c.back_side);
+      var examples = mdTexts_(c.back_side, 'em');
+      if (!examples.length) examples = mdTexts_(c.notes, 'em');
+      var mode = String(cfg_('autoplay_speak', 'translate')).toLowerCase() === 'target' ? 'target' : 'translate';
+      var steps = buildCardSteps(word, meaning, examples, mode,
+        cfg_('target_language', 'nl-NL'), cfg_('native_language', defaultNative_()));
+      if (speechOn) speechSynthesis.cancel();
+      apRunSteps(steps, 0, gen, function () {
+        if (gen !== apGen || !apActive || apPaused) return;
+        apTimer = setTimeout(function () { apIndex++; apRunCard(); }, AP_CARD_GAP);
+      });
+    }
+
+    function fetchAutoplayBatch(first) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!apActive) return;
+          var cards = (res && res.cards) || [];
+          if (!cards.length) {
+            showToast(first ? 'No cards to play yet — add some first' : 'Nothing left to play');
+            stopAutoplay();
+            return;
+          }
+          apQueue = cards;
+          apIndex = 0;
+          apRunCard();
+        })
+        .withFailureHandler(function (err) {
+          console.error('autoplay fetch failed', err);
+          showToast('Could not load cards');
+          stopAutoplay();
+        })
+        .getAutoplayCards();
+    }
+
+    function startAutoplay() {
+      if (!speechOn) { showToast('Speech isn’t available in this browser'); return; }
+      apActive = true; apPaused = false; apQueue = []; apIndex = 0;
+      document.getElementById('ap-pause').textContent = '⏸';
+      document.getElementById('ap-hint').textContent = '🎧 Hands-free · keep this screen on';
+      document.getElementById('ap-badge').textContent = '';
+      document.getElementById('ap-front').textContent = '…';
+      document.getElementById('ap-answer').classList.add('hidden');
+      document.getElementById('ap-count').textContent = 'Loading…';
+      show('autoplay');
+      acquireWake();
+      fetchAutoplayBatch(true);
+    }
+
+    function toggleAutoplayPause() {
+      if (!apActive) return;
+      apPaused = !apPaused;
+      var btn = document.getElementById('ap-pause');
+      var hint = document.getElementById('ap-hint');
+      if (apPaused) {
+        apGen++; // invalidate the running chain
+        if (apTimer) { clearTimeout(apTimer); apTimer = null; }
+        if (speechOn) speechSynthesis.cancel();
+        btn.textContent = '▶';
+        hint.textContent = '⏸ Paused — tap ▶ to resume';
+        releaseWake();
+      } else {
+        btn.textContent = '⏸';
+        hint.textContent = '🎧 Hands-free · keep this screen on';
+        acquireWake();
+        apRunCard(); // replay the current card from the top
+      }
+    }
+
+    function stopAutoplay() {
+      apActive = false; apPaused = false;
+      apGen++;
+      if (apTimer) { clearTimeout(apTimer); apTimer = null; }
+      if (speechOn) speechSynthesis.cancel();
+      releaseWake();
+      loadHome();
+    }
+
+    // Keep the screen awake during playback so the browser doesn't suspend
+    // speech. Best-effort: unsupported on some browsers, and the OS can still
+    // reclaim it. Re-acquired when the tab becomes visible again.
+    function acquireWake() {
+      try {
+        if ('wakeLock' in navigator && navigator.wakeLock && navigator.wakeLock.request) {
+          navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {});
+        }
+      } catch (e) { /* not supported — the on-screen hint is the fallback */ }
+    }
+    function releaseWake() {
+      try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) {}
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && apActive && !apPaused) acquireWake();
+    });
+
     // ---- Import cards (link out to the Sheet's own importer) ----
     // Deliberately not an in-app parser: Sheets already has one, and delegating
     // to it keeps this to a link plus the two gotchas that actually bite
@@ -780,11 +1002,12 @@
     function closeAddCards() { document.getElementById('addcards').classList.add('hidden'); }
 
     // ---- Settings ----
-    // Language dropdown built from the voices actually installed (so any pick can
-    // be spoken), plus the current value and a short fallback list for before
-    // voices have loaded. Always ends with "Other…" for a free-text BCP-47 tag.
-    function buildLangOptions(current) {
-      var sel = document.getElementById('set-lang');
+    // Fill a language <select> from the voices actually installed (so any pick
+    // can be spoken), plus the current value and a short fallback list for
+    // before voices have loaded. Always ends with "Other…" for a free-text tag.
+    // Shared by the target-language and native-language pickers.
+    function fillLangSelect(selectId, current) {
+      var sel = document.getElementById(selectId);
       sel.innerHTML = '';
       var voices = (speechOn && speechSynthesis.getVoices()) || [];
       var haveVoices = voices.length > 0;
@@ -815,40 +1038,64 @@
       sel.value = current;
     }
 
-    function onLangSelect() {
-      var isOther = document.getElementById('set-lang').value === '__other__';
-      var box = document.getElementById('set-lang-other');
+    function onLangSelect(selectId, otherId) {
+      var isOther = document.getElementById(selectId).value === '__other__';
+      var box = document.getElementById(otherId);
       box.classList.toggle('hidden', !isOther);
       if (isOther) box.focus();
+    }
+
+    // Reads a language picker: the free-text box when "Other…" is chosen.
+    function readLangSelect(selectId, otherId) {
+      var v = document.getElementById(selectId).value;
+      return v === '__other__' ? document.getElementById(otherId).value.trim() : v;
+    }
+
+    // The device language is the sensible default for spoken meanings.
+    function defaultNative_() {
+      return (navigator.language || 'en-US');
+    }
+
+    // Native-language row is only relevant when autoplay actually translates.
+    function onApModeChange() {
+      var translate = document.getElementById('set-apmode').value === 'translate';
+      document.getElementById('set-native-wrap').classList.toggle('hidden', !translate);
     }
 
     function openSettings() {
       if (!sessionData || !sessionData.config) { showToast('Still loading — try again in a moment'); return; }
       var c = sessionData.config;
-      buildLangOptions(c.target_language || 'nl-NL');
-      var other = document.getElementById('set-lang-other');
-      other.classList.add('hidden');
-      other.value = '';
+      fillLangSelect('set-lang', c.target_language || 'nl-NL');
+      fillLangSelect('set-native', (c.native_language && c.native_language.trim()) || defaultNative_());
+      document.getElementById('set-lang-other').classList.add('hidden');
+      document.getElementById('set-lang-other').value = '';
+      document.getElementById('set-native-other').classList.add('hidden');
+      document.getElementById('set-native-other').value = '';
       // Snap a stored rate to the nearest of the three presets.
       var rate = parseFloat(c.speech_rate);
       if (!isFinite(rate)) rate = 0.9;
       document.getElementById('set-rate').value = rate <= 0.8 ? '0.7' : (rate >= 1.0 ? '1.1' : '0.9');
       document.getElementById('set-autospeak').checked =
         String(c.auto_speak == null ? 'yes' : c.auto_speak).toLowerCase() === 'yes';
+      document.getElementById('set-apmode').value =
+        String(c.autoplay_speak || 'translate').toLowerCase() === 'target' ? 'target' : 'translate';
+      onApModeChange();
       document.getElementById('settings-msg').textContent = '';
       document.getElementById('settings').classList.remove('hidden');
     }
     function closeSettings() { document.getElementById('settings').classList.add('hidden'); }
 
     function saveSettings() {
-      var sel = document.getElementById('set-lang').value;
-      var lang = sel === '__other__'
-        ? document.getElementById('set-lang-other').value.trim()
-        : sel;
+      var lang = readLangSelect('set-lang', 'set-lang-other');
       if (!lang) { document.getElementById('settings-msg').textContent = 'Enter a language tag first.'; return; }
-      var rate = document.getElementById('set-rate').value;
-      var auto = document.getElementById('set-autospeak').checked ? 'yes' : 'no';
-      var updates = { target_language: lang, speech_rate: rate, auto_speak: auto };
+      var native = readLangSelect('set-native', 'set-native-other') || defaultNative_();
+      var updates = {
+        target_language: lang,
+        speech_rate: document.getElementById('set-rate').value,
+        auto_speak: document.getElementById('set-autospeak').checked ? 'yes' : 'no',
+        autoplay_speak: document.getElementById('set-apmode').value,
+        native_language: native
+      };
 
       var btn = document.getElementById('settings-save-btn');
       btn.disabled = true;
@@ -865,11 +1112,9 @@
         if (--remaining > 0) return;
         btn.disabled = false;
         if (failed) { document.getElementById('settings-msg').textContent = 'Could not save — try again.'; return; }
-        // Reflect locally so speak() and the subtitle use the new values now,
-        // without a round-trip through getSession.
-        sessionData.config.target_language = lang;
-        sessionData.config.speech_rate = rate;
-        sessionData.config.auto_speak = auto;
+        // Reflect locally so speak()/autoplay and the subtitle use the new
+        // values now, without a round-trip through getSession.
+        keys.forEach(function (k) { sessionData.config[k] = updates[k]; });
         updateSubtitle_();
         closeSettings();
         showToast('Settings saved');
