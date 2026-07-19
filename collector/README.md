@@ -38,22 +38,31 @@ in the repo, users get an update hint that leads nowhere.
 
 ## Reading the numbers
 
-Each ping is one row in `pings`: timestamp, UTC date, app version, random
-install id. Useful formulas (put them on a separate tab):
+Each ping is one row in `pings`: timestamp, UTC date, app version, install id
+(a one-way hash of the copy's spreadsheet id — one id per copy, stable across
+browsers and devices). Useful formulas (put them on a separate tab; the QUERY
+ones dedupe on (date, id) first because one copy can ping more than once a
+day — see the caveats):
 
 ```
-Total installs (upper bound):  =COUNTUNIQUE(pings!D2:D)
-Pings today:                   =COUNTIF(pings!B2:B, TEXT(TODAY(),"yyyy-mm-dd"))
-Daily actives by date:         =QUERY(pings!A2:D, "select B, count(D) group by B order by B desc", 0)
-Version distribution:          =QUERY(pings!A2:D, "select C, count(C) group by C", 0)
+Total installs:          =COUNTUNIQUE(pings!D2:D)
+Active installs by date: =QUERY(UNIQUE({pings!B2:B, pings!D2:D}), "select Col1, count(Col2) group by Col1 order by Col1 desc", 0)
+New installs by date:    =QUERY(QUERY(pings!B2:D, "select D, min(B) group by D", 0), "select Col2, count(Col1) group by Col2 order by Col2 desc", 1)
+Version distribution:    =QUERY(UNIQUE({pings!C2:C, pings!D2:D}), "select Col1, count(Col2) group by Col1", 0)
 ```
+
+"New installs by date" (each id counted on the day it was first seen) is the
+series to watch after announcing the project somewhere.
 
 Caveats worth remembering when you quote these numbers:
 
-- **Installs is an upper bound.** The install id lives in `localStorage`, which
-  Safari sometimes denies inside the Apps Script iframe — those users get a
-  fresh id per visit. Daily ping counts (one per id per day) are the more
-  trustworthy series.
+- **One copy can ping several times a day.** The once-a-day throttle lives in
+  `localStorage`, which Safari sometimes denies inside the Apps Script iframe,
+  and each browser throttles independently — the same id then appears in
+  multiple rows per day. Count distinct ids (as the formulas above do), never
+  raw rows.
+- **Installs means copies, not people.** A household sharing one Sheet is one
+  install; someone who copies the Sheet twice is two.
 - Users can turn the ping off (`update_check: no` in their config tab), and
   forks can blank `UPDATE_CHECK_URL`. You count willing participants, not
   everyone.

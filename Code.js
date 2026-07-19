@@ -74,7 +74,7 @@ var DEFAULT_CONFIG = [
   ['native_language', '',
     'Your own language, for spoken meanings in hands-free translate mode. Blank = use the device language.'],
   ['update_check', 'yes',
-    'Check for app updates on startup? Sends one anonymous ping a day (random id + app version, nothing else) that also lets the author count active users. yes / no'],
+    'Check for app updates on startup? Sends one anonymous ping a day (an unrecognizable fingerprint of this copy + app version, nothing else) that also lets the author count active users. yes / no'],
   ['webapp_url', '',
     'The /exec link of your own deployment. Leave blank to auto-detect.']
 ];
@@ -462,6 +462,21 @@ function isNew_(card) {
 
 // ---- Public API (called from the client via google.script.run) -------------
 
+/**
+ * Anonymous id for the update-check ping: SHA-256 of the spreadsheet id,
+ * truncated. One id per copy of the Sheet — stable across browsers and
+ * devices, unlike anything stored client-side. The hash is one-way (sheet
+ * ids are ~44 chars of entropy, nothing to brute-force against), so the
+ * collector can count installs without learning which spreadsheets they are.
+ */
+function installId_() {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
+    SpreadsheetApp.getActiveSpreadsheet().getId());
+  var hex = '';
+  for (var i = 0; i < 16; i++) hex += ('0' + (raw[i] & 0xFF).toString(16)).slice(-2);
+  return hex;
+}
+
 /** Returns the cards due today + a batch of new cards, plus summary counts. */
 function getSession() {
   var data = readCards_();
@@ -511,6 +526,7 @@ function getSession() {
     // "Append to current sheet" targets whatever tab happens to be active.
     cardsUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() + '#gid=' + data.sheet.getSheetId(),
     version: APP_VERSION,
+    installId: installId_(),
     // Settings from the `config` tab. The client caches this for the page's
     // lifetime, which is why getWeakCards() doesn't need to return it too.
     config: readConfig_(),

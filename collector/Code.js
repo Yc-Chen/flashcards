@@ -13,8 +13,9 @@
  *  - `settings` — key/value rows: latest_version, release_url. Edit these
  *                 cells to announce a release; no redeploy needed.
  *
- * What a ping contains: an app version string and a random install id the
- * app made up locally. Apps Script does not expose the caller's IP or any
+ * What a ping contains: an app version string and an install id — a one-way
+ * hash of the copy's spreadsheet id, so one id per copy and no way to tell
+ * which spreadsheet it is. Apps Script does not expose the caller's IP or any
  * account identity to this script, so there is nothing more to log even by
  * accident.
  */
@@ -32,7 +33,7 @@ var SETTINGS_DEFAULTS = [
 ];
 
 /**
- * GET /exec?v=<app version>&id=<random install id>
+ * GET /exec?v=<app version>&id=<install id, hashed from the copy's spreadsheet id>
  * Always answers { latest, url }, even if logging fails — the version check
  * is the user-facing feature, counting is the side effect.
  */

@@ -325,8 +325,9 @@ touched).
 That request is also the project's only usage signal — it's how the author
 knows roughly how many people use the app. Full disclosure of what it involves:
 
-- **What's sent:** the app version and a random id your browser made up
-  (so two pings can be recognized as the same copy). That's all.
+- **What's sent:** the app version and an unrecognizable fingerprint of your
+  copy — a one-way hash of its spreadsheet id, so two pings can be recognized
+  as the same copy but the copy itself can't be identified. That's all.
 - **What's not sent:** nothing about you or your deck — no account, no email,
   no card contents, no study data. The endpoint is an Apps Script web app,
   which doesn't even expose callers' IP addresses to its owner.

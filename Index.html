@@ -407,9 +407,9 @@
         </div>
         <p class="note">
           Checks once a day for a newer version of the app. It sends only the
-          version you're running and a random id — never your cards, account or
-          study data. It's also how the author counts users; switch it off and
-          nothing is sent.
+          version you're running and an unrecognizable fingerprint of this copy
+          — never your cards, account or study data. It's also how the author
+          counts users; switch it off and nothing is sent.
         </p>
       </div>
 
@@ -554,8 +554,9 @@
     // ---- Update check ----
     // Once a day, ask the author's endpoint (collector/ in the repo) whether a
     // newer version exists, and show a hint on the home screen if so. The
-    // request carries exactly two things: APP_VERSION and a random install id —
-    // no account, no deck data. It doubles as the project's only usage signal
+    // request carries exactly two things: APP_VERSION and an install id (a
+    // one-way hash of the spreadsheet id, from getSession — one id per copy)
+    // — no account, no deck data. It doubles as the project's only usage signal
     // (the author counts pings), which is why the config tab documents it and
     // `update_check: no` turns it off entirely. Fails silently: an offline
     // device or a blocked request must never bother the user.
@@ -584,9 +585,9 @@
     }
 
     // localStorage can be unavailable (Safari in a cross-site iframe) — then
-    // the id regenerates per load and the daily throttle is lost, which only
-    // means slightly noisier counts, never breakage. Hence every access is
-    // wrapped.
+    // the daily throttle is lost and the copy pings on every load, which only
+    // means duplicate rows for the same id and day, never breakage. Hence
+    // every access is wrapped.
     function lsGet_(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
     function lsSet_(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
@@ -599,12 +600,8 @@
       // `latest` — say nothing rather than guess, and send no ping.
       if (!appVersion_()) return;
 
-      var id = lsGet_('fc_install_id');
-      if (!id) {
-        id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
-          : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
-        lsSet_('fc_install_id', id);
-      }
+      var id = (sessionData && sessionData.installId) || '';
+      if (!id) return; // server predates installId — send nothing rather than an unidentifiable ping
 
       var today = new Date().toISOString().slice(0, 10);
       if (lsGet_('fc_checked_on') === today) {
