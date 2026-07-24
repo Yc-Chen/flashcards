@@ -1179,6 +1179,18 @@
         v ? '🎴 Flashcards · version ' + v : '';
       document.getElementById('settings-msg').textContent = '';
       document.getElementById('settings').classList.remove('hidden');
+      // iOS Safari can leave a <select>'s displayed text vertically clipped when
+      // its value was set while the modal was still display:none; forcing each
+      // one to re-lay-out now that it's actually visible clears it up.
+      requestAnimationFrame(function () {
+        ['set-lang', 'set-rate', 'set-apmode', 'set-native'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          el.style.display = 'none';
+          void el.offsetHeight;
+          el.style.display = '';
+        });
+      });
     }
     function closeSettings() { document.getElementById('settings').classList.add('hidden'); }
 

@@ -16,6 +16,11 @@ var APP_VERSION = '1.0.0';
 
 var SHEET_NAME = 'cards';
 
+// Optional sheet-native "weak card" priority view (formula-driven, lives
+// directly in the Sheet). When present, getWeakCards() serves its order
+// instead of the box-ascending default — see readDerivedWeakIds_().
+var DERIVED_WEAK_SHEET_NAME = 'derived_weak_priority';
+
 // Leitner boxes 1..5 and how many days until a card in each box is due again.
 var BOX_INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16 };
 var MAX_BOX = 5;
@@ -549,26 +554,65 @@ function toClientCard_(card) {
 }
 
 /**
- * Returns weak cards (lowest Leitner boxes first) for a schedule-neutral
- * practice drill. The client grades these purely to advance the queue — no
- * write happens, so box/due/right/wrong are never touched. Only already-started
- * cards are eligible (a brand-new card has no box); excluded cards are skipped.
+ * Reads the optional `derived_weak_priority` tab's `id` column (row order is
+ * the priority order — the sheet formula already filters + sorts it). Returns
+ * null if the tab doesn't exist yet, so callers can fall back cleanly; this is
+ * what keeps a Sheet without the tab (e.g. the public template, mid-rollout)
+ * working unchanged.
+ * @return {?Array<string>} Ordered, non-blank card ids, or null.
+ */
+function readDerivedWeakIds_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DERIVED_WEAK_SHEET_NAME);
+  if (!sheet) return null;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  var ids = [];
+  for (var i = 0; i < values.length; i++) {
+    var id = String(values[i][0]).trim();
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Returns weak cards for a schedule-neutral practice drill. The client grades
+ * these purely to advance the queue — no write happens, so box/due/right/wrong
+ * are never touched. Only already-started cards are eligible (a brand-new
+ * card has no box); excluded cards are skipped.
+ *
+ * If the `derived_weak_priority` tab exists, its row order (already
+ * filtered + sorted by its own formula) is used as-is. Otherwise falls back
+ * to the default: lowest Leitner boxes first.
  * @param {number} [limit] Max cards to return (defaults to PRACTICE_LIMIT).
- * @return {Object} { cards: [clientCard, ...] } sorted box 1 → up.
+ * @return {Object} { cards: [clientCard, ...] }.
  */
 function getWeakCards(limit) {
   var cards = readCards_().cards;
+  var cap = limit || PRACTICE_LIMIT;
+  var derivedIds = readDerivedWeakIds_();
+
+  if (derivedIds) {
+    var byId = {};
+    for (var i = 0; i < cards.length; i++) byId[String(cards[i].id)] = cards[i];
+    var ordered = [];
+    for (var j = 0; j < derivedIds.length && ordered.length < cap; j++) {
+      var card = byId[derivedIds[j]];
+      if (card) ordered.push(card);
+    }
+    return { cards: ordered.map(toClientCard_) };
+  }
+
   var eligible = [];
-  for (var i = 0; i < cards.length; i++) {
-    var card = cards[i];
-    if (String(card.exclude || '').trim() !== '') continue; // dropped from practice
-    if (isNew_(card)) continue;                              // never-studied, no box yet
-    eligible.push(card);
+  for (var k = 0; k < cards.length; k++) {
+    var c = cards[k];
+    if (String(c.exclude || '').trim() !== '') continue; // dropped from practice
+    if (isNew_(c)) continue;                              // never-studied, no box yet
+    eligible.push(c);
   }
   // Shuffle first, then a stable sort by box gives variety within each box.
   shuffle_(eligible);
   eligible.sort(function (a, b) { return Number(a.box) - Number(b.box); });
-  var cap = limit || PRACTICE_LIMIT;
   return { cards: eligible.slice(0, cap).map(toClientCard_) };
 }
 
