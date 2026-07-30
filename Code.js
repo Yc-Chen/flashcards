@@ -16,11 +16,6 @@ var APP_VERSION = '1.0.0';
 
 var SHEET_NAME = 'cards';
 
-// Read-only "weak card" priority view, written as plain values by
-// writeWeakPriorityTab_ purely for inspection in the Sheet. The practice drill
-// recomputes the ranking live (computeWeakRanking_) and does NOT read this tab.
-var DERIVED_WEAK_SHEET_NAME = 'derived_weak_priority';
-
 // Leitner boxes 1..5 and how many days until a card in each box is due again.
 var BOX_INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16 };
 var MAX_BOX = 5;
@@ -107,7 +102,6 @@ function onOpen() {
     .addItem('Open the app ↗', 'menuOpenApp_')
     .addSeparator()
     .addItem('Check Sheet health', 'menuCheckSheet_')
-    .addItem('Rebuild weak-cards list', 'menuRebuildWeakTab_')
     .addSeparator()
     .addItem('View on GitHub ↗', 'menuGitHub_')
     .addItem('About Flashcards (v' + APP_VERSION + ')', 'menuAbout_')
@@ -156,13 +150,6 @@ function menuOpenApp_() {
 /** Menu: report whether the tab and column names match what the code expects. */
 function menuCheckSheet_() {
   SpreadsheetApp.getUi().alert('🎴 Sheet health', checkSheetHealth(), SpreadsheetApp.getUi().ButtonSet.OK);
-}
-
-/** Menu: regenerate the `derived_weak_priority` view from current card stats. */
-function menuRebuildWeakTab_() {
-  var n = writeWeakPriorityTab_();
-  SpreadsheetApp.getActiveSpreadsheet()
-    .toast(n + ' weak card' + (n === 1 ? '' : 's') + ' listed.', '🎴 Flashcards', 5);
 }
 
 /**
@@ -527,10 +514,6 @@ function getSession() {
   // Payload the client needs — strip nothing, but shape it explicitly.
   var queue = due.concat(newBatch).map(toClientCard_);
 
-  // Keep the visible weak-cards view current on each app open. Best-effort:
-  // a failure here (e.g. a locked sheet) must never block loading a session.
-  try { writeWeakPriorityTab_(); } catch (err) {}
-
   return {
     today: today,
     dueCount: due.length,
@@ -570,11 +553,9 @@ function toClientCard_(card) {
 }
 
 /**
- * Ranks weak cards by how much they need review. This is the single source of
- * truth for both the practice drill (getWeakCards) and the visible
- * `derived_weak_priority` tab (writeWeakPriorityTab_), so the two can never
- * diverge. Pure computation over the given cards — reads nothing, writes
- * nothing.
+ * Ranks weak cards by how much they need review — the single source of truth
+ * behind the practice drill (getWeakCards). Pure computation over the given
+ * cards: reads nothing, writes nothing.
  *
  * A card is "weak" if it has been missed at least once (`wrong > 0`). Never-
  * missed cards — brand-new, or answered only correctly — are dropped. Excluded
@@ -585,8 +566,8 @@ function toClientCard_(card) {
  * date), so cards you got wrong in your latest session surface at the top; ties
  * in tier 2 break toward the more balanced (higher `min(right,wrong)`) card.
  *
- * Attaches transient `_tier`/`_score`/`_lastWrong` fields to each returned card
- * for writeWeakPriorityTab_; toClientCard_ ignores them (it whitelists fields).
+ * Attaches transient `_tier`/`_score`/`_lastWrong` fields used only for the
+ * sort; toClientCard_ ignores them (it whitelists fields).
  * @param {Array<Object>} cards Rows from readCards_().cards.
  * @return {Array<Object>} Ranked card objects, most-urgent first.
  */
@@ -651,46 +632,6 @@ function getWeakCardsByBox_(cards, cap) {
   shuffle_(eligible);
   eligible.sort(function (a, b) { return Number(a.box) - Number(b.box); });
   return { cards: eligible.slice(0, cap).map(toClientCard_) };
-}
-
-/**
- * Writes the whole weak-card ranking to the `derived_weak_priority` tab as
- * plain values (no formulas), purely so it can be eyeballed in the Sheet. The
- * practice drill does NOT read this tab — it recomputes live — so a stale tab
- * never affects what you actually practice. Ordering matches getWeakCards
- * exactly because both call computeWeakRanking_.
- * @return {number} How many weak cards were listed.
- */
-function writeWeakPriorityTab_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(DERIVED_WEAK_SHEET_NAME) || ss.insertSheet(DERIVED_WEAK_SHEET_NAME);
-  var ranked = computeWeakRanking_(readCards_().cards);
-
-  var header = ['id', 'front_side', 'back_side', 'box', 'right', 'wrong', 'last_wrong', 'tier', 'score'];
-  var rows = [header];
-  for (var i = 0; i < ranked.length; i++) {
-    var c = ranked[i];
-    rows.push([
-      c.id, c.front_side, c.back_side, c.box,
-      Number(c.right) || 0, Number(c.wrong) || 0,
-      c._lastWrong, c._tier, c._score
-    ]);
-  }
-
-  // clearContents wipes the old formula-driven version on first run; then a
-  // single setValues lays down header + all ranked rows.
-  sheet.clearContents();
-  sheet.getRange(1, 1, rows.length, header.length).setValues(rows);
-  sheet.setFrozenRows(1);
-  return ranked.length;
-}
-
-/**
- * Client-callable (no trailing underscore) wrapper so the web app can refresh
- * the visible weak-cards tab after finishing a study session. Fire-and-forget.
- */
-function rebuildWeakTab() {
-  return writeWeakPriorityTab_();
 }
 
 /**

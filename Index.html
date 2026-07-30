@@ -1433,22 +1433,6 @@
       // (study progress is written per-card, so re-fetch happens from home).
       document.getElementById('keep-going-btn').classList.toggle('hidden', mode !== 'practice');
       show('summary');
-
-      // After a real study session (not the schedule-neutral practice drill, and
-      // not an early quit), the right/wrong counts just changed — refresh the
-      // visible weak-cards view. Fire-and-forget; the drill itself never reads it.
-      if (mode !== 'practice' && !quit) scheduleWeakRebuild_();
-    }
-
-    // Rebuild the weak-cards tab once all per-card grade writes have committed,
-    // so it reflects the final card too (grade() writes are fire-and-forget via
-    // `pending`). Give up after a few seconds; the next app open refreshes anyway.
-    function scheduleWeakRebuild_(tries) {
-      tries = tries || 0;
-      if (pending > 0 && tries < 20) { setTimeout(function () { scheduleWeakRebuild_(tries + 1); }, 300); return; }
-      google.script.run
-        .withFailureHandler(function (err) { console.error('weak rebuild failed', err); })
-        .rebuildWeakTab();
     }
 
     // End the current session early. Graded cards are already saved (study) or
