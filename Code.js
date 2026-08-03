@@ -12,7 +12,7 @@
 // it in ⚙ Settings, the Sheet menu shows it in About, and the daily update
 // check compares it against the collector's `latest_version`. Bump it here (and
 // nowhere else) when you release — see collector/README.md.
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.1.0';
 
 var SHEET_NAME = 'cards';
 
@@ -28,6 +28,10 @@ var NEW_PER_SESSION = 10;
 
 // How many weak (low-box) cards to serve in a schedule-neutral practice drill.
 var PRACTICE_LIMIT = 20;
+
+// Hands-free autoplay draws from the same weak pool as the practice drill, but
+// loads a bigger batch per session (more listening exposure before it repeats).
+var AUTOPLAY_LIMIT = 100;
 
 // Column order in the sheet. Keep in sync with the header row.
 // front_side / back_side / notes all support Markdown.
@@ -644,21 +648,25 @@ function getWeakCardsByBox_(cards, cap) {
 }
 
 /**
- * Cards for the hands-free autoplay drill: every active (non-excluded) card,
- * shuffled. Unlike getWeakCards this includes brand-new cards — listening is
- * exactly when you want exposure to words you haven't studied yet. Purely for
- * playback; nothing is written. The client re-calls this each loop for a fresh
- * shuffle, so a cap keeps the payload sane on a big deck.
- * @param {number} [limit] Max cards to return (defaults to 200).
+ * Cards for the hands-free autoplay drill. Same weak pool as the practice drill
+ * (computeWeakRanking_: missed cards, brand-new and box-5 cards excluded), but
+ * shuffled — priority order doesn't matter for passive listening — and served
+ * in a bigger batch (AUTOPLAY_LIMIT). Purely for playback; nothing is written.
+ * The client re-calls this each loop, so the shuffle gives a fresh order and a
+ * fresh random slice when the pool is larger than the cap.
+ *
+ * Falls back to the box-based weak pool only when nothing has been missed yet
+ * (a freshly-forked deck), so autoplay still has something to play.
+ * @param {number} [limit] Max cards to return (defaults to AUTOPLAY_LIMIT).
  * @return {Object} { cards: [clientCard, ...] } shuffled.
  */
 function getAutoplayCards(limit) {
-  var cards = readCards_().cards.filter(function (c) {
-    return String(c.exclude || '').trim() === '';
-  });
-  shuffle_(cards);
-  var cap = limit || 200;
-  return { cards: cards.slice(0, cap).map(toClientCard_) };
+  var cap = limit || AUTOPLAY_LIMIT;
+  var cards = readCards_().cards;
+  var ranked = computeWeakRanking_(cards);
+  if (ranked.length === 0) return getWeakCardsByBox_(cards, cap); // fresh-fork fallback
+  shuffle_(ranked);
+  return { cards: ranked.slice(0, cap).map(toClientCard_) };
 }
 
 /**
