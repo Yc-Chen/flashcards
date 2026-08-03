@@ -1020,6 +1020,17 @@
 
     function startAutoplay() {
       if (!speechOn) { showToast('Speech isn’t available in this browser'); return; }
+      // iOS Safari only lets speech begin from inside a user gesture. Autoplay's
+      // first utterance fires after an async getAutoplayCards() round-trip, so it
+      // is no longer "in" this tap — without priming, that first speak is blocked
+      // and the whole chain hangs on card 1 (no audio, answer never revealed).
+      // Speak a silent utterance now, synchronously in the click, to unlock the
+      // engine for the async utterances that follow.
+      try {
+        var warm = new SpeechSynthesisUtterance(' ');
+        warm.volume = 0;
+        speechSynthesis.speak(warm);
+      } catch (e) { /* priming is best-effort */ }
       apActive = true; apPaused = false; apQueue = []; apIndex = 0;
       document.getElementById('ap-pause').textContent = '⏸';
       document.getElementById('ap-hint').textContent = '🎧 Hands-free · keep this screen on';
