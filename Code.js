@@ -511,6 +511,12 @@ function getSession() {
   shuffle_(newCards);
   var newBatch = newCards.slice(0, NEW_PER_SESSION);
 
+  // True size of the weak-cards drill pool (same source of truth the drill
+  // uses), so the button label matches what "Practice weak cards" serves.
+  // Falls back to the box-based pool only when nothing has been missed yet.
+  var weakRanked = computeWeakRanking_(cards);
+  var weakCount = weakRanked.length || getWeakCardsByBox_(cards, cards.length).cards.length;
+
   // Payload the client needs — strip nothing, but shape it explicitly.
   var queue = due.concat(newBatch).map(toClientCard_);
 
@@ -522,6 +528,7 @@ function getSession() {
     totalCards: cards.length,
     activeCards: cards.length - excludedCount,
     boxCounts: boxCounts,
+    weakCount: weakCount,
     flaggedCount: flaggedCount,
     excludedCount: excludedCount,
     sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
@@ -559,7 +566,7 @@ function toClientCard_(card) {
  *
  * A card is "weak" if it has been missed at least once (`wrong > 0`). Never-
  * missed cards — brand-new, or answered only correctly — are dropped. Excluded
- * cards are skipped. Two tiers, most-urgent first:
+ * cards, and mastered cards in box 5, are skipped. Two tiers, most-urgent first:
  *   Tier 1: wrong but never yet right (`right == 0`) — you don't know it at all.
  *   Tier 2: mixed signal (`right > 0` and `wrong > 0`) — not yet stable.
  * Within each tier, the most recently missed cards come first (by `last_wrong`
@@ -576,6 +583,7 @@ function computeWeakRanking_(cards) {
   for (var i = 0; i < cards.length; i++) {
     var card = cards[i];
     if (String(card.exclude || '').trim() !== '') continue; // dropped from practice
+    if (Number(card.box) === 5) continue; // box 5 = mastered; no longer "weak"
     var right = Number(card.right) || 0;
     var wrong = Number(card.wrong) || 0;
     if (wrong === 0) continue; // never missed: covers brand-new and answered-only-right
@@ -626,6 +634,7 @@ function getWeakCardsByBox_(cards, cap) {
     var c = cards[k];
     if (String(c.exclude || '').trim() !== '') continue; // dropped from practice
     if (isNew_(c)) continue;                              // never-studied, no box yet
+    if (Number(c.box) === 5) continue;                   // box 5 = mastered
     eligible.push(c);
   }
   // Shuffle first, then a stable sort by box gives variety within each box.

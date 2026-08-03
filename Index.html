@@ -530,9 +530,13 @@
         startBtn.disabled = false;
       }
 
-      // Practice drills weak (started, low-box) cards; enable only if any exist.
-      var weak = 0;
-      for (var wb = 1; wb <= 5; wb++) weak += (data.boxCounts[wb] || 0);
+      // Weak-cards drill: cards actually missed (wrong>0), Box 5 excluded.
+      // weakCount comes from the server (computeWeakRanking_), so the label
+      // matches exactly what the drill serves. Older payloads without the
+      // field fall back to the box sum so the button still works.
+      var weak = (typeof data.weakCount === 'number')
+        ? data.weakCount
+        : (function () { var s = 0; for (var wb = 1; wb <= 4; wb++) s += (data.boxCounts[wb] || 0); return s; })();
       var practiceBtn = document.getElementById('practice-btn');
       if (weak === 0) {
         practiceBtn.textContent = 'No cards to drill yet';
