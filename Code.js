@@ -77,6 +77,8 @@ var DEFAULT_CONFIG = [
     'Speaking speed. 0.5 = slow, 1 = normal.'],
   ['auto_speak', 'yes',
     'Speak the example sentence when you reveal an answer? yes / no'],
+  ['new_card_order', 'random',
+    'How a study session picks its new cards: "random" (shuffle the deck) or "recent" (most recently added first, by the `added` date).'],
   ['autoplay_speak', 'translate',
     'Hands-free autoplay: "translate" (word, then meaning, then example) or "target" (word + example only).'],
   ['native_language', '',
@@ -490,6 +492,7 @@ function getSession() {
   var data = readCards_();
   var cards = data.cards;
   var today = todayStr_();
+  var config = readConfig_();
 
   var due = [];
   var newCards = [];
@@ -512,7 +515,19 @@ function getSession() {
   }
 
   shuffle_(due);
+  // New-card selection order (config `new_card_order`): "recent" introduces the
+  // most recently added cards first (by the `added` date); anything else keeps
+  // the default random pick. Shuffle first either way so that in "recent" mode
+  // cards added on the same day still vary between sessions (stable sort keeps
+  // the shuffled order within an equal `added` date).
   shuffle_(newCards);
+  if (String(config.new_card_order || '').toLowerCase() === 'recent') {
+    newCards.sort(function (a, b) {
+      var da = normDate_(a.added), db = normDate_(b.added);
+      if (da === db) return 0;
+      return da < db ? 1 : -1; // newer date first; blank `added` sorts last
+    });
+  }
   var newBatch = newCards.slice(0, NEW_PER_SESSION);
 
   // True size of the weak-cards drill pool (same source of truth the drill
@@ -544,7 +559,7 @@ function getSession() {
     installId: installId_(),
     // Settings from the `config` tab. The client caches this for the page's
     // lifetime, which is why getWeakCards() doesn't need to return it too.
-    config: readConfig_(),
+    config: config,
     queue: queue
   };
 }
@@ -608,7 +623,15 @@ function computeWeakRanking_(cards) {
 /**
  * Returns weak cards for a schedule-neutral practice drill. The client grades
  * these purely to advance the queue — no write happens, so box/due/right/wrong
- * are never touched. Ordering comes from computeWeakRanking_.
+ * are never touched.
+ *
+ * Because the drill never writes, computeWeakRanking_ would return the identical
+ * top slice every run — the same cards forever. Instead we take the full ranked
+ * pool and draw `cap` cards by weighted random sampling (sampleByUrgency_): the
+ * most urgent cards come up far more often, but every weak card can appear, so
+ * drills vary between runs and you eventually cover the whole pool. This does
+ * NOT touch computeWeakRanking_ itself, so getSession (real practice), the weak-
+ * count button, and autoplay are unaffected.
  *
  * Falls back to the lowest-Leitner-box drill only when the tier ranking is
  * empty — e.g. a freshly-forked deck with no right/wrong history yet — so such
@@ -621,7 +644,41 @@ function getWeakCards(limit) {
   var cards = readCards_().cards;
   var ranked = computeWeakRanking_(cards);
   if (ranked.length === 0) return getWeakCardsByBox_(cards, cap);
-  return { cards: ranked.slice(0, cap).map(toClientCard_) };
+  return { cards: sampleByUrgency_(ranked, cap).map(toClientCard_) };
+}
+
+/**
+ * Weighted random sampling without replacement from an urgency-ranked list.
+ * A card's weight decays exponentially with its rank (weight = e^(-rank/tau)),
+ * so the most urgent cards are much likelier to be drawn while the long tail
+ * still has a real chance — the drill favors what needs review but varies run
+ * to run instead of always serving the same top slice. Result order follows the
+ * draw (urgent-leaning first), which is fine for a drill.
+ *
+ * The weight of each card is fixed to its ORIGINAL rank and carried alongside
+ * the pool as entries are removed, so removals don't reshuffle urgency.
+ * @param {Array<Object>} ranked Cards most-urgent-first (from computeWeakRanking_).
+ * @param {number} n How many to draw.
+ * @return {Array<Object>} Up to n distinct cards.
+ */
+function sampleByUrgency_(ranked, n) {
+  var pool = ranked.slice();                       // don't mutate the caller's array
+  var tau = Math.max(n, ranked.length / 4);        // decay scale: how fast urgency falls off
+  var weights = [];
+  for (var i = 0; i < pool.length; i++) weights.push(Math.exp(-i / tau));
+  var out = [];
+  var draws = Math.min(n, pool.length);
+  for (var d = 0; d < draws; d++) {
+    var total = 0;
+    for (var w = 0; w < weights.length; w++) total += weights[w];
+    var r = Math.random() * total;
+    var idx = 0;
+    for (; idx < weights.length - 1; idx++) { r -= weights[idx]; if (r <= 0) break; }
+    out.push(pool[idx]);
+    pool.splice(idx, 1);
+    weights.splice(idx, 1);
+  }
+  return out;
 }
 
 /**
