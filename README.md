@@ -9,8 +9,7 @@ Sheet *is* the database, and Google Apps Script serves the app.
 - **App:** a single Apps Script web app (mobile-first, add-to-home-screen friendly).
 - **Scheduling:** Leitner boxes (1→5), with immediate write-back of your progress.
 - **Speech:** tap 🔊 to hear a word or example in the language you're studying —
-  your browser's own voices, no API key, no cost. Plus a **hands-free 🎧 autoplay**
-  mode that reads cards to you while you cook or commute.
+  your browser's own voices, no API key, no cost.
 - **In-app tools:** edit a card, flag it for later, or exclude a bad card — all
   saved straight to the Sheet.
 
@@ -254,8 +253,6 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 | `target_language` | `nl-NL` | **The language you're studying.** A [BCP-47](https://en.wikipedia.org/wiki/IETF_language_tag) tag — `zh-CN`, `fr-FR`, `de-DE`, `es-ES`, `ja-JP`… |
 | `speech_rate` | `0.9` | Speaking speed. `0.5` = slow, `1` = normal. |
 | `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
-| `autoplay_speak` | `translate` | Hands-free mode: `translate` (word → meaning → example) or `target` (word + example only). |
-| `native_language` | *(blank)* | Your own language, for spoken meanings in hands-free `translate` mode. Blank = use your device's language. |
 | `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). Also in **⚙ Settings**. `yes` / `no` |
 | `webapp_url` | *(blank)* | The `/exec` link of your deployment, used by **🎴 Flashcards → Open the app ↗**. Blank = auto-detect. |
 
@@ -263,23 +260,6 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 
 Tap **🔊** in a card's tool row to hear it, and the example sentence plays
 automatically when you reveal an answer (turn that off with `auto_speak`).
-
-### Hands-free autoplay 🎧
-Tap **🎧 Autoplay (hands-free)** on the home screen for an eyes-free listening
-drill — good for the kitchen, a walk, or a commute. It plays through your cards
-aloud and advances on its own, looping in random order until you stop, and it
-holds the screen awake so playback isn't cut off. Grades aren't recorded (you're
-not looking), so it never changes your schedule.
-
-Two styles, set in **⚙ Settings** (or the `autoplay_speak` key):
-- **Word → meaning → example** — the word, a pause to recall it, then the meaning
-  in your own language, then the example. Set **your language** in Settings too.
-- **Target language only** — just the word and its example, for immersion.
-
-> **It needs the screen on and the app in front.** Phone browsers (iOS especially)
-> stop speech when the screen locks or you switch apps — a Web Speech limitation,
-> not a setting. So prop the phone up with the screen on; true pocket/locked-screen
-> playback isn't possible without pre-recorded audio.
 
 ### Speech
 Speech uses your browser's built-in voices — nothing is sent anywhere, there's no

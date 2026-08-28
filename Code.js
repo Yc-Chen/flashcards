@@ -29,10 +29,6 @@ var NEW_PER_SESSION = 10;
 // How many weak (low-box) cards to serve in a schedule-neutral practice drill.
 var PRACTICE_LIMIT = 20;
 
-// Hands-free autoplay draws from the same weak pool as the practice drill, but
-// loads a bigger batch per session (more listening exposure before it repeats).
-var AUTOPLAY_LIMIT = 100;
-
 // Column order in the sheet. Keep in sync with the header row.
 // front_side / back_side / notes all support Markdown.
 // `flag`      holds a marker (FLAG_MARK) when you flag a card for later editing.
@@ -79,10 +75,6 @@ var DEFAULT_CONFIG = [
     'Speak the example sentence when you reveal an answer? yes / no'],
   ['new_card_order', 'random',
     'How a study session picks its new cards: "random" (shuffle the deck) or "recent" (most recently added first, by the `added` date).'],
-  ['autoplay_speak', 'translate',
-    'Hands-free autoplay: "translate" (word, then meaning, then example) or "target" (word + example only).'],
-  ['native_language', '',
-    'Your own language, for spoken meanings in hands-free translate mode. Blank = use the device language.'],
   ['update_check', 'yes',
     'Check for app updates on startup? Sends one anonymous ping a day (an unrecognizable fingerprint of this copy + app version, nothing else) that also lets the author count active users. yes / no'],
   ['webapp_url', '',
@@ -386,8 +378,7 @@ function readConfig_() {
 // Config keys the app UI may write. `webapp_url` is deliberately excluded — it
 // is deploy/fork plumbing, and letting the in-app Settings screen change it would
 // be a footgun (point your own app at nowhere). It stays Sheet-only.
-var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak', 'autoplay_speak',
-  'native_language', 'update_check'];
+var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak', 'update_check'];
 
 /**
  * Writes one setting from the app's Settings screen. Whitelisted so the client
@@ -630,8 +621,8 @@ function computeWeakRanking_(cards) {
  * pool and draw `cap` cards by weighted random sampling (sampleByUrgency_): the
  * most urgent cards come up far more often, but every weak card can appear, so
  * drills vary between runs and you eventually cover the whole pool. This does
- * NOT touch computeWeakRanking_ itself, so getSession (real practice), the weak-
- * count button, and autoplay are unaffected.
+ * NOT touch computeWeakRanking_ itself, so getSession (real practice) and the
+ * weak-count button are unaffected.
  *
  * Falls back to the lowest-Leitner-box drill only when the tier ranking is
  * empty — e.g. a freshly-forked deck with no right/wrong history yet — so such
@@ -702,28 +693,6 @@ function getWeakCardsByBox_(cards, cap) {
   shuffle_(eligible);
   eligible.sort(function (a, b) { return Number(a.box) - Number(b.box); });
   return { cards: eligible.slice(0, cap).map(toClientCard_) };
-}
-
-/**
- * Cards for the hands-free autoplay drill. Same weak pool as the practice drill
- * (computeWeakRanking_: missed cards, brand-new and box-5 cards excluded), but
- * shuffled — priority order doesn't matter for passive listening — and served
- * in a bigger batch (AUTOPLAY_LIMIT). Purely for playback; nothing is written.
- * The client re-calls this each loop, so the shuffle gives a fresh order and a
- * fresh random slice when the pool is larger than the cap.
- *
- * Falls back to the box-based weak pool only when nothing has been missed yet
- * (a freshly-forked deck), so autoplay still has something to play.
- * @param {number} [limit] Max cards to return (defaults to AUTOPLAY_LIMIT).
- * @return {Object} { cards: [clientCard, ...] } shuffled.
- */
-function getAutoplayCards(limit) {
-  var cap = limit || AUTOPLAY_LIMIT;
-  var cards = readCards_().cards;
-  var ranked = computeWeakRanking_(cards);
-  if (ranked.length === 0) return getWeakCardsByBox_(cards, cap); // fresh-fork fallback
-  shuffle_(ranked);
-  return { cards: ranked.slice(0, cap).map(toClientCard_) };
 }
 
 /**
