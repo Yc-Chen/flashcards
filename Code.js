@@ -29,6 +29,10 @@ var NEW_PER_SESSION = 10;
 // How many weak (low-box) cards to serve in a schedule-neutral practice drill.
 var PRACTICE_LIMIT = 20;
 
+// Cap for the "today's mistakes" drill. A day's errors are naturally few; this
+// is only a runaway guard.
+var ERROR_DRILL_LIMIT = 50;
+
 // Column order in the sheet. Keep in sync with the header row.
 // front_side / back_side / notes all support Markdown.
 // `flag`      holds a marker (FLAG_MARK) when you flag a card for later editing.
@@ -527,6 +531,9 @@ function getSession() {
   var weakRanked = computeWeakRanking_(cards);
   var weakCount = weakRanked.length || getWeakCardsByBox_(cards, cards.length).cards.length;
 
+  // Size of today's-mistakes drill, from the same helper the drill uses.
+  var errorCount = todaysErrors_(cards, today).length;
+
   // Payload the client needs — strip nothing, but shape it explicitly.
   var queue = due.concat(newBatch).map(toClientCard_);
 
@@ -539,6 +546,7 @@ function getSession() {
     activeCards: cards.length - excludedCount,
     boxCounts: boxCounts,
     weakCount: weakCount,
+    errorCount: errorCount,
     flaggedCount: flaggedCount,
     excludedCount: excludedCount,
     sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
@@ -693,6 +701,49 @@ function getWeakCardsByBox_(cards, cap) {
   shuffle_(eligible);
   eligible.sort(function (a, b) { return Number(a.box) - Number(b.box); });
   return { cards: eligible.slice(0, cap).map(toClientCard_) };
+}
+
+/**
+ * Cards missed in today's study session — the short-horizon counterpart to the
+ * weak drill. `last_wrong` is stamped only by gradeCard, and drills never write,
+ * so this is exactly "what I got wrong in a real session today".
+ *
+ * Shuffled so that re-running it ("Keep going") varies the order. Like the weak
+ * drill it is playback-only: nothing is written, so a card you re-drill
+ * correctly stays on today's list until the date rolls over. That is deliberate
+ * — this reviews the day's misses, it does not re-grade them.
+ * @param {number} [limit] Max cards to return (defaults to ERROR_DRILL_LIMIT).
+ * @return {Object} { cards: [clientCard, ...] } shuffled.
+ */
+function getErrorCards(limit) {
+  var cap = limit || ERROR_DRILL_LIMIT;
+  var errs = todaysErrors_(readCards_().cards, todayStr_());
+  shuffle_(errs);
+  return { cards: errs.slice(0, cap).map(toClientCard_) };
+}
+
+/**
+ * The cards whose most recent miss is `today` — source of truth for both the
+ * drill (getErrorCards) and the home-screen count (getSession.errorCount).
+ * Pure: reads nothing, writes nothing.
+ *
+ * Deliberately simpler than computeWeakRanking_: no box-5 skip and no
+ * `wrong > 0` test, because a wrong answer always resets the box to 1 and a
+ * stamped `last_wrong` already implies `wrong >= 1` — both filters would be
+ * dead code here.
+ * @param {Array<Object>} cards Rows from readCards_().cards.
+ * @param {string} today 'yyyy-MM-dd', from todayStr_().
+ * @return {Array<Object>} The matching card objects, in sheet order.
+ */
+function todaysErrors_(cards, today) {
+  var out = [];
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    if (String(card.exclude || '').trim() !== '') continue; // dropped from practice
+    if (normDate_(card.last_wrong) !== today) continue;
+    out.push(card);
+  }
+  return out;
 }
 
 /**

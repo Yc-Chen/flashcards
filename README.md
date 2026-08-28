@@ -157,15 +157,20 @@ user's own Sheet.
 
 ## How to use it
 
-- Home shows **Due** / **New** counts and the Leitner box breakdown, with two ways
-  to study:
+- Home shows **Due** / **New** counts and the Leitner box breakdown, with the
+  scheduled session on top and two free drills below it:
   - **Start practice** — the scheduled Leitner session (all due cards + up to 10 new
     ones). Grading **saves your progress** to the Sheet.
-  - **Practice weak cards** — a free drill of your weakest cards (lowest Leitner
-    boxes first, so a word you just missed shows up first). This is
-    **schedule-neutral: grading does *not* change any card's box or due date** — use
-    it to hammer shaky words as often as you like without disturbing your schedule.
-    Tap **Keep going** on the summary to pull a fresh batch.
+  - **Weak cards** — a free drill of the cards you keep missing (never-right ones
+    first, then the shaky ones; drawn by weighted random, so the most urgent come
+    up most often but the whole pool eventually cycles through).
+  - **Today's mistakes** — the cards you got wrong in today's scheduled session,
+    for a quick second pass while it's still fresh. It appears only on a day you
+    have actually missed something.
+
+  Both drills are **schedule-neutral: grading does *not* change any card's box or
+  due date** — use them as often as you like without disturbing your schedule. Tap
+  **Keep going** on the summary to pull a fresh batch of the same drill.
 - Each card shows the **front** first. Tap it (or **Show answer**) to reveal the
   **back** + any **notes**. Revealing also speaks the example aloud — see
   [Hearing your cards](#hearing-your-cards-).
@@ -173,7 +178,9 @@ user's own Sheet.
   - Normal card: **Wrong** (back to box 1) or **Correct** (up one box).
   - Brand-new card: **Didn't know** (box 1) or **Already knew** (skip to box 4).
 - In a scheduled session, progress saves to the Sheet immediately after each grade.
-  In a weak-card drill, nothing about the schedule is written.
+  In either drill, nothing about the schedule is written — which also means a card
+  stays on **Today's mistakes** for the rest of the day even after you re-drill it
+  correctly.
 - The **✎ edit / ⚑ flag / 🚫 exclude** tools save straight to the Sheet in **both**
   modes (they change a card's content, not its schedule).
 
@@ -286,10 +293,11 @@ right thing on its own.
 - Boxes **1→5**, review intervals **1, 2, 4, 8, 16 days**.
 - **Correct** → up one box. **Wrong** → back to box 1.
 - Up to **10 new cards** per scheduled session.
-- **Practice weak cards** drills the lowest boxes and is **schedule-neutral** — it
-  never changes a card's box or due date. Up to **20 cards** per drill.
+- Both drills — **Weak cards** and **Today's mistakes** — are **schedule-neutral**:
+  they never change a card's box or due date. Up to **20 cards** per weak drill,
+  and up to **50** for a day's mistakes (a day rarely comes near that).
 - Tune in `Code.js`: `BOX_INTERVALS`, `NEW_PER_SESSION`, `KNOWN_START_BOX`,
-  `PRACTICE_LIMIT`.
+  `PRACTICE_LIMIT`, `ERROR_DRILL_LIMIT`.
 
 ## Updates & the version check
 

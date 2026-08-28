@@ -54,6 +54,10 @@
 
     /* Home */
     #home { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
+    /* The two schedule-neutral drills, side by side. When one is hidden the
+       other's flex:1 makes it span the row on its own. */
+    .drill-row { display: flex; gap: 10px; }
+    .drill-row button { flex: 1; }
     .counts {
       display: flex; gap: 12px; justify-content: center;
     }
@@ -272,7 +276,10 @@
       </div>
       <div class="boxbar" id="boxbar"></div>
       <button class="btn-primary" id="start-btn" onclick="startSession()">Start practice</button>
-      <button class="btn-ghost" style="width:100%" id="practice-btn" onclick="startPractice()">Practice weak cards</button>
+      <div class="drill-row">
+        <button class="btn-ghost hidden" id="errors-btn" onclick="startErrorDrill()">Today’s mistakes</button>
+        <button class="btn-ghost" id="practice-btn" onclick="startPractice()">Weak cards</button>
+      </div>
       <button class="btn-ghost" style="width:100%" onclick="loadHome()">Refresh</button>
       <div id="flagged-line" class="flagged-line hidden"></div>
       <a class="sheet-link" onclick="openAddCards()">＋ Import cards from a file</a>
@@ -419,7 +426,8 @@
     var revealed = false;
     var sessionStats = { right: 0, wrong: 0, total: 0 };
     var pending = 0; // outstanding grade writes
-    var mode = 'study'; // 'study' = scheduled + writes; 'practice' = weak drill, no writes
+    var mode = 'study'; // 'study' = scheduled + writes; 'practice' = a drill, no writes
+    var drill = 'weak';  // which drill mode 'practice' is running: 'weak' | 'errors'
 
     function show(id) {
       ['loading', 'error', 'home', 'session', 'summary'].forEach(function (s) {
@@ -507,9 +515,18 @@
         practiceBtn.textContent = 'No cards to drill yet';
         practiceBtn.disabled = true;
       } else {
-        practiceBtn.textContent = 'Practice weak cards (' + weak + ')';
+        practiceBtn.textContent = 'Weak cards (' + weak + ')';
         practiceBtn.disabled = false;
       }
+
+      // Today's mistakes: cards missed in a real session today (last_wrong).
+      // Hidden rather than disabled — on a day you haven't missed anything there
+      // is nothing to offer, and the weak button then spans the row. Older
+      // payloads have no errorCount, which reads as 0 and keeps it hidden.
+      var errs = (typeof data.errorCount === 'number') ? data.errorCount : 0;
+      var errBtn = document.getElementById('errors-btn');
+      errBtn.textContent = 'Today’s mistakes (' + errs + ')';
+      errBtn.classList.toggle('hidden', errs === 0);
       show('home');
       checkForUpdate_();
     }
@@ -602,9 +619,11 @@
       renderCard();
     }
 
-    // Weak-card drill: lowest-box cards first, graded purely to advance the
-    // queue. No schedule is written, so box/due/proficiency stay untouched.
+    // Weak-card drill: cards you've missed before, weighted by urgency, graded
+    // purely to advance the queue. No schedule is written, so box/due/
+    // proficiency stay untouched.
     function startPractice() {
+      drill = 'weak';
       show('loading');
       google.script.run
         .withSuccessHandler(beginPractice)
@@ -612,15 +631,31 @@
         .getWeakCards();
     }
 
+    // Today's-mistakes drill: the cards you got wrong in a real session today.
+    // Same schedule-neutral machinery as the weak drill — only the pool differs.
+    function startErrorDrill() {
+      drill = 'errors';
+      show('loading');
+      google.script.run
+        .withSuccessHandler(beginPractice)
+        .withFailureHandler(showError)
+        .getErrorCards();
+    }
+
     function beginPractice(res) {
+      var errors = drill === 'errors';
       var cards = (res && res.cards) ? res.cards : [];
       if (cards.length === 0) {
-        // Nothing to drill (all cards are new/excluded) — bounce back home.
-        showToast('No cards to drill yet');
+        // Nothing to drill — bounce back home. (Weak: every card is new or
+        // excluded. Errors: the count changed since home was rendered.)
+        showToast(errors ? 'Nothing missed today — nice' : 'No cards to drill yet');
         loadHome();
         return;
       }
       mode = 'practice';
+      document.getElementById('mode-banner').textContent = errors
+        ? '🩹 Today’s mistakes · grades won’t change your schedule'
+        : '🔁 Practice mode · grades won’t change your schedule';
       document.getElementById('session').classList.add('practice');
       queue = cards.slice();
       idx = 0;
@@ -1191,8 +1226,9 @@
       document.getElementById('summary-text').textContent =
         s.right + ' known · ' + s.wrong + ' to review  (' +
         (quit ? done + ' of ' + s.total + ' done' : 'of ' + s.total) + ')';
-      // "Keep going" re-drills weak cards; only meaningful in practice mode
-      // (study progress is written per-card, so re-fetch happens from home).
+      // "Keep going" re-runs whichever drill just ended; only meaningful in
+      // practice mode (study progress is written per-card, so a re-fetch
+      // happens from home).
       document.getElementById('keep-going-btn').classList.toggle('hidden', mode !== 'practice');
       show('summary');
     }
@@ -1203,9 +1239,9 @@
       finishSession(true);
     }
 
-    // Continue practising: pull a fresh batch of weak cards.
+    // Continue practising: pull a fresh batch of whichever drill just ended.
     function keepGoing() {
-      startPractice();
+      if (drill === 'errors') startErrorDrill(); else startPractice();
     }
 
     // boot
