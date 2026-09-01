@@ -217,7 +217,9 @@ that one toggle prevents all of it.
 
 **Write-back is by row number, not by `id`.** `gradeCard`/`updateCard` locate a
 card by its 1-based sheet row (`Code.js:209`, `_row = i + 2`) — `id` is never used
-as a lookup key. Consequences:
+as a lookup key (which is why **🎴 Flashcards → Renumber id column**, i.e.
+`renumberIds`, can rewrite the whole column without risking progress).
+Consequences:
 - Importing with **Append** is safe; existing rows keep their positions.
 - Importing with **Replace current sheet** discards all existing progress. Only
   suggest it for a fresh deck, and say so plainly.

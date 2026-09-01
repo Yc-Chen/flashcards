@@ -203,7 +203,7 @@ Each card has four tools in the progress row (top right):
 
 | column | meaning |
 |--------|---------|
-| `id` | any unique value |
+| `id` | any unique value — a label for you, never used by the app (cards are found by row) |
 | `type` | optional tag/category (e.g. `vocab`, `grammar`) — shown on the card badge |
 | `front_side` | front of the card — **Markdown** |
 | `back_side` | back of the card (the answer) — **Markdown** |
@@ -222,6 +222,12 @@ Self-healing only fills *empty* header cells — it never overwrites a wrong
 label. If you suspect an import or edit broke the layout, run
 **🎴 Flashcards → Check Sheet health** in the Sheet: it reports exactly which
 tab or column names don't match what the app expects.
+
+Deleting rows leaves gaps in `id`, and hand-added rows often have none at all.
+**🎴 Flashcards → Renumber id column** rewrites the column as 1, 2, 3 … in row
+order (it asks first). Progress is untouched — the app never looks at `id` — but
+the old numbers are gone, so run it only when nothing outside the Sheet still
+refers to a card by its id.
 
 ### Adding your own cards
 Add a row to the `cards` tab (laptop or phone). Fill `front_side`, `back_side`,

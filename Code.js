@@ -104,6 +104,7 @@ function onOpen() {
     .addItem('Open the app ↗', 'menuOpenApp_')
     .addSeparator()
     .addItem('Check Sheet health', 'menuCheckSheet_')
+    .addItem('Renumber id column', 'menuRenumberIds_')
     .addSeparator()
     .addItem('View on GitHub ↗', 'menuGitHub_')
     .addItem('About Flashcards (v' + APP_VERSION + ')', 'menuAbout_')
@@ -207,6 +208,60 @@ function checkHeaderRow_(sheet, expected) {
       (got ? '"' + got + '"' : 'blank') + ' but should be "' + expected[i] + '".');
   }
   return problems;
+}
+
+/** Menu: confirm, then renumber the `id` column 1…N in row order. */
+function menuRenumberIds_() {
+  var ui = SpreadsheetApp.getUi();
+  var answer = ui.alert('🎴 Renumber ids',
+    'Rewrite the "id" column so cards are numbered 1, 2, 3 … in the order they ' +
+    'sit in the sheet, closing the gaps left by deleted rows.\n\n' +
+    'Your cards and your progress are untouched: the app finds a card by its ' +
+    'row, never by its id. But the old numbers are gone for good — anything ' +
+    'outside the Sheet that refers to a card by id (an export, a note, a ' +
+    'one-off script) will point at a different card afterwards.\n\n' +
+    'Renumber now?',
+    ui.ButtonSet.YES_NO);
+  if (answer !== ui.Button.YES) return;
+  ui.alert('🎴 Renumber ids', renumberIds(), ui.ButtonSet.OK);
+}
+
+/**
+ * Rewrites column A as 1…N in sheet order, so ids stay contiguous after rows
+ * are deleted and blank ids on hand-added rows get filled.
+ *
+ * Safe by construction: `id` is a human-facing handle only — every read and
+ * write in this file addresses a card by its 1-based sheet row (`_row`), so
+ * renumbering cannot touch scheduling, stats or the queue.
+ *
+ * Fully blank rows keep a blank id (matching readCards_, which skips them), so
+ * spacer rows don't consume a number. One bulk read + one bulk write: per-cell
+ * writes time out on a deck of a few thousand cards.
+ */
+function renumberIds() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var sheet = getSheet_();
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 'No cards to renumber.';
+
+    // Read every column, not just A: whether a row is a card depends on the
+    // rest of it, and a row whose only content is a stale id is still a card.
+    var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+    var ids = [];
+    var n = 0;
+    for (var r = 0; r < values.length; r++) {
+      var blank = values[r].every(function (c) { return c === '' || c === null; });
+      ids.push([blank ? '' : ++n]);
+    }
+    sheet.getRange(2, 1, ids.length, 1).setValues(ids);
+    return n
+      ? 'Renumbered ' + n + ' card' + (n === 1 ? '' : 's') + ': id 1…' + n + '.'
+      : 'No cards to renumber.';
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** Menu: pop a dialog with a link to the project's GitHub repo (setup + source). */
