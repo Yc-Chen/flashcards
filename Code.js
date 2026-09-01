@@ -12,7 +12,7 @@
 // it in ⚙ Settings, the Sheet menu shows it in About, and the daily update
 // check compares it against the collector's `latest_version`. Bump it here (and
 // nowhere else) when you release — see collector/README.md.
-var APP_VERSION = '1.1.0';
+var APP_VERSION = '1.2.0';
 
 var SHEET_NAME = 'cards';
 
