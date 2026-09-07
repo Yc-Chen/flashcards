@@ -77,6 +77,10 @@ var DEFAULT_CONFIG = [
     'Speaking speed. 0.5 = slow, 1 = normal.'],
   ['auto_speak', 'yes',
     'Speak the example sentence when you reveal an answer? yes / no'],
+  ['sentence_gap', '1.5',
+    'Seconds of silence after each sentence in the 🎧 Soak player. 0 = no pause.'],
+  ['sentence_repeat', '1',
+    'How many times each sentence is spoken before the 🎧 Soak player moves on.'],
   ['new_card_order', 'random',
     'How a study session picks its new cards: "random" (shuffle the deck) or "recent" (most recently added first, by the `added` date).'],
   ['update_check', 'yes',
@@ -84,6 +88,31 @@ var DEFAULT_CONFIG = [
   ['webapp_url', '',
     'The /exec link of your own deployment. Leave blank to auto-detect.']
 ];
+
+// ---- Sentences tab ---------------------------------------------------------
+// A third tab holds whole sentences, kept for their *shape* — tense, clause
+// order, tempo — rather than for a word you don't know. The 🎧 Soak player
+// reads them aloud one at a time with a silence after each. Nothing here is
+// ever graded, scheduled or written back: it is a player, not a drill.
+
+var SENTENCE_SHEET_NAME = 'sentences';
+
+// Column order in the sentences tab. Positional like HEADERS — new columns
+// MUST be appended at the end.
+// `text`    the sentence itself, and the ONLY thing ever spoken.
+// `note`    your translation, or the thing to notice. Never spoken — exactly
+//           as the native-language gloss on a card is never spoken.
+// `tag`     optional label (`perfectum`, `bijzin`, …), shown as a badge.
+// `exclude` non-empty (`x`) drops the row from the player, as it does in `cards`.
+//
+// There is deliberately NO language column, now or later: `text` is in
+// `target_language` from the config tab, the same setting the cards are read
+// in. One study language per Sheet — which is also what lets scriptMismatch_
+// guard this tab for free.
+var SENTENCE_HEADERS = ['id', 'text', 'note', 'tag', 'added', 'exclude'];
+
+// Payload guard only; a soak list is normally a few dozen rows.
+var SENTENCE_LIMIT = 500;
 
 // ---- Web app entry point ---------------------------------------------------
 
@@ -188,11 +217,23 @@ function checkSheetHealth() {
     problems = problems.concat(checkHeaderRow_(config, CONFIG_HEADERS));
   }
 
+  // The sentences tab is read positionally too, so a mangled header there fails
+  // exactly as silently as one in `cards` — it belongs in this diagnostic.
+  var sentences = ss.getSheetByName(SENTENCE_SHEET_NAME);
+  if (!sentences) {
+    problems.push('⚠️ No "' + SENTENCE_SHEET_NAME + '" tab — the app recreates it ' +
+      'with headers on next load, so this fixes itself.');
+  } else {
+    problems = problems.concat(checkHeaderRow_(sentences, SENTENCE_HEADERS));
+  }
+
   if (problems.length) return problems.join('\n\n');
   var rows = cards.getLastRow() - 1;
-  return '✅ All good.\n\n"' + SHEET_NAME + '" and "' + CONFIG_SHEET_NAME +
-    '" tabs found and every column name is correct. ' +
-    rows + ' card row' + (rows === 1 ? '' : 's') + '.';
+  var lines = sentences.getLastRow() - 1;
+  return '✅ All good.\n\n"' + SHEET_NAME + '", "' + CONFIG_SHEET_NAME + '" and "' +
+    SENTENCE_SHEET_NAME + '" tabs found and every column name is correct.\n\n' +
+    rows + ' card row' + (rows === 1 ? '' : 's') + ' · ' +
+    lines + ' sentence row' + (lines === 1 ? '' : 's') + '.';
 }
 
 /** Compares a sheet's header row against `expected`; returns problem strings. */
@@ -437,7 +478,8 @@ function readConfig_() {
 // Config keys the app UI may write. `webapp_url` is deliberately excluded — it
 // is deploy/fork plumbing, and letting the in-app Settings screen change it would
 // be a footgun (point your own app at nowhere). It stays Sheet-only.
-var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak', 'update_check'];
+var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak',
+  'sentence_gap', 'sentence_repeat', 'update_check'];
 
 /**
  * Writes one setting from the app's Settings screen. Whitelisted so the client
@@ -473,6 +515,97 @@ function writeConfigValue_(key, value) {
     }
   }
   sheet.appendRow([key, value, '']);
+}
+
+// ---- Sentences helpers -----------------------------------------------------
+// Deliberately parallel to getConfigSheet_/ensureConfigSchema_ rather than a
+// generalization of them: getSheet_ is hardcoded to `cards` and the one-off
+// maintenance scripts depend on that exact signature.
+
+function getSentencesSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SENTENCE_SHEET_NAME);
+  // Insert at the end so `cards` stays the tab you land on.
+  if (!sheet) sheet = ss.insertSheet(SENTENCE_SHEET_NAME, ss.getNumSheets());
+  ensureSentenceSchema_(sheet);
+  return sheet;
+}
+
+/**
+ * Self-heals the sentences tab the way ensureSchema_ does for `cards`: writes
+ * the header row when the tab is empty and fills any header cell left blank
+ * later, so the tab appears on its own and a future column needs no migration.
+ * Only fills EMPTY cells — a wrong label is checkSheetHealth's job to report,
+ * not this function's to silently overwrite.
+ */
+function ensureSentenceSchema_(sheet) {
+  var need = SENTENCE_HEADERS.length;
+  if (sheet.getMaxColumns() < need) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), need - sheet.getMaxColumns());
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, need).setValues([SENTENCE_HEADERS]);
+    sheet.setFrozenRows(1);
+    // At the default 100px you cannot read the sentence in the cell you type
+    // it into, which is the one thing this tab exists for.
+    sheet.setColumnWidth(SENTENCE_HEADERS.indexOf('text') + 1, 420);
+    sheet.setColumnWidth(SENTENCE_HEADERS.indexOf('note') + 1, 300);
+    return;
+  }
+  var header = sheet.getRange(1, 1, 1, need).getValues()[0];
+  var changed = false;
+  for (var i = 0; i < need; i++) {
+    if (header[i] === '' || header[i] === null) { header[i] = SENTENCE_HEADERS[i]; changed = true; }
+  }
+  if (changed) sheet.getRange(1, 1, 1, need).setValues([header]);
+}
+
+/** Reads all sentences as objects, tagging each with its 1-based sheet row. */
+function readSentences_() {
+  var sheet = getSentencesSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { sheet: sheet, items: [] };
+
+  var values = sheet.getRange(2, 1, lastRow - 1, SENTENCE_HEADERS.length).getValues();
+  var items = [];
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    if (row.every(function (c) { return c === '' || c === null; })) continue; // skip blank rows
+    var item = {};
+    for (var c = 0; c < SENTENCE_HEADERS.length; c++) item[SENTENCE_HEADERS[c]] = row[c];
+    item._row = i + 2; // actual sheet row number
+    items.push(item);
+  }
+  return { sheet: sheet, items: items };
+}
+
+/**
+ * The sentences the player will actually speak — the single source of truth
+ * behind both getSentences and getSession's `sentenceCount`, so the number on
+ * the button and the list you get can never disagree. Pure: reads nothing,
+ * writes nothing.
+ *
+ * A row with a `note` but no `text` is skipped rather than played as silence:
+ * that is a half-typed row, not a sentence.
+ */
+function playableSentences_(items) {
+  var out = [];
+  for (var i = 0; i < items.length; i++) {
+    if (String(items[i].exclude || '').trim() !== '') continue; // dropped by hand
+    if (String(items[i].text || '').trim() === '') continue;    // nothing to say
+    out.push(items[i]);
+  }
+  return out;
+}
+
+function toClientSentence_(s) {
+  return {
+    row: s._row,
+    id: s.id,
+    text: s.text,
+    note: s.note,
+    tag: String(s.tag || '').trim()
+  };
 }
 
 /** Reads all cards as objects, tagging each with its 1-based sheet row. */
@@ -589,6 +722,25 @@ function getSession() {
   // Size of today's-mistakes drill, from the same helper the drill uses.
   var errorCount = todaysErrors_(cards, today).length;
 
+  // The 🎧 Soak list, counted with the same helper the player filters by.
+  //
+  // Wrapped for exactly the reason readConfig_ is: a getSession error blanks the
+  // whole UI through the client's failure handler, and a side feature must never
+  // be able to do that. A renamed or broken sentences tab costs you the Soak
+  // button, not your deck.
+  var sentenceCount = 0;
+  var sentencesUrl = '';
+  try {
+    var sentences = readSentences_();
+    sentenceCount = playableSentences_(sentences.items).length;
+    // Deep-linked to the tab by gid, like cardsUrl: the "add sentences" modal
+    // has to land you on the tab you are meant to type into.
+    sentencesUrl = SpreadsheetApp.getActiveSpreadsheet().getUrl() +
+      '#gid=' + sentences.sheet.getSheetId();
+  } catch (err) {
+    // Count stays 0 and the URL blank — the client falls back to sheetUrl.
+  }
+
   // Payload the client needs — strip nothing, but shape it explicitly.
   var queue = due.concat(newBatch).map(toClientCard_);
 
@@ -602,6 +754,7 @@ function getSession() {
     boxCounts: boxCounts,
     weakCount: weakCount,
     errorCount: errorCount,
+    sentenceCount: sentenceCount,
     flaggedCount: flaggedCount,
     excludedCount: excludedCount,
     sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
@@ -609,6 +762,7 @@ function getSession() {
     // the "open the Sheet" links — landing on `cards` matters for import, where
     // "Append to current sheet" targets whatever tab happens to be active.
     cardsUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() + '#gid=' + data.sheet.getSheetId(),
+    sentencesUrl: sentencesUrl,
     version: APP_VERSION,
     installId: installId_(),
     // Settings from the `config` tab. The client caches this for the page's
@@ -799,6 +953,25 @@ function todaysErrors_(cards, today) {
     out.push(card);
   }
   return out;
+}
+
+/**
+ * The sentences for the 🎧 Soak player, in sheet order.
+ *
+ * Deliberately NOT shuffled here, unlike the two drills: the player's shuffle
+ * toggle reorders the list it already holds, so doing it server-side would cost
+ * a round trip and throw away the original order the toggle flips back to.
+ *
+ * Playback-only — nothing is written, so a sentence can be heard any number of
+ * times without touching a cell.
+ * @param {number} [limit] Max sentences to return (defaults to SENTENCE_LIMIT).
+ * @return {Object} { sentences: [clientSentence, ...], total } — `total` is the
+ *   full playable count, so the client can say so when the cap truncated it.
+ */
+function getSentences(limit) {
+  var cap = limit || SENTENCE_LIMIT;
+  var items = playableSentences_(readSentences_().items);
+  return { sentences: items.slice(0, cap).map(toClientSentence_), total: items.length };
 }
 
 /**

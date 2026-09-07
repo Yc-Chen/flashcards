@@ -10,6 +10,9 @@ Sheet *is* the database, and Google Apps Script serves the app.
 - **Scheduling:** Leitner boxes (1→5), with immediate write-back of your progress.
 - **Speech:** tap 🔊 to hear a word or example in the language you're studying —
   your browser's own voices, no API key, no cost.
+- **🎧 Soak:** keep whole sentences in a `sentences` tab and have the app read
+  them aloud one after another, with a silence between — for absorbing tempo,
+  tense and clause order rather than testing yourself.
 - **In-app tools:** edit a card, flag it for later, or exclude a bad card — all
   saved straight to the Sheet.
 
@@ -168,6 +171,9 @@ user's own Sheet.
     for a quick second pass while it's still fresh. It appears only on a day you
     have actually missed something.
 
+  - **🎧 Soak** — not cards at all: your `sentences` tab, played aloud. See
+    [Soak](#soak--listening-to-whole-sentences-).
+
   Both drills are **schedule-neutral: grading does *not* change any card's box or
   due date** — use them as often as you like without disturbing your schedule. Tap
   **Keep going** on the summary to pull a fresh batch of the same drill.
@@ -217,7 +223,8 @@ Each card has four tools in the progress row (top right):
 
 The app self-heals the schema: on first load it adds any missing columns
 (`flag`, `exclude`) without touching your data. It does the same for the
-[`config` tab](#settings-config-tab), so both tabs appear on their own.
+[`config`](#settings-config-tab) and [`sentences`](#soak--listening-to-whole-sentences-)
+tabs, so all three appear on their own.
 Self-healing only fills *empty* header cells — it never overwrites a wrong
 label. If you suspect an import or edit broke the layout, run
 **🎴 Flashcards → Check Sheet health** in the Sheet: it reports exactly which
@@ -266,6 +273,8 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 | `target_language` | `nl-NL` | **The language you're studying.** A [BCP-47](https://en.wikipedia.org/wiki/IETF_language_tag) tag — `zh-CN`, `fr-FR`, `de-DE`, `es-ES`, `ja-JP`… |
 | `speech_rate` | `0.9` | Speaking speed. `0.5` = slow, `1` = normal. |
 | `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
+| `sentence_gap` | `1.5` | Seconds of silence after each sentence in **🎧 Soak**. `0` = no pause. Also in **⚙ Settings**. |
+| `sentence_repeat` | `1` | How many times **🎧 Soak** speaks each sentence before moving on. Also in **⚙ Settings**. |
 | `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). Also in **⚙ Settings**. `yes` / `no` |
 | `webapp_url` | *(blank)* | The `/exec` link of your deployment, used by **🎴 Flashcards → Open the app ↗**. Blank = auto-detect. |
 
@@ -293,6 +302,45 @@ right thing on its own.
 > a higher-quality voice for your language. On macOS, add voices in *System Settings →
 > Accessibility → Spoken Content*. If nothing is installed for your language the app
 > tells you instead of speaking it in the wrong voice.
+
+## Soak — listening to whole sentences 🎧
+
+Some sentences are worth hearing over and over even when you understand every
+word in them: that's how the **tempo** of a language, its tenses, and the order
+things go in a subordinate clause stop being rules and start being reflexes.
+Cards can't do that — they ask you a question. **🎧 Soak** just plays.
+
+Tap **🎧 Soak** on the home screen and press **▶**. It reads one sentence, goes
+quiet for a moment, reads the next, and keeps going. Nothing is revealed, graded,
+or written back — replay it as often as you like.
+
+- **⏮ / ⏭** step between sentences; **tap the sentence** to hear it again.
+- **🔀** shuffles, and toggles back to the order they sit in the Sheet.
+- The **pause length** and **how many times each sentence repeats** are in
+  **⚙ Settings** (`sentence_gap` / `sentence_repeat`).
+
+> **Keep the app in front while it plays.** Phones suspend browser speech the
+> moment the screen locks or you switch apps — that's the platform, not the app.
+> Soak keeps the screen awake while it runs, and if you do switch away it pauses
+> itself so you come back to where it stopped instead of to silence. It is not
+> background audio.
+
+### The `sentences` tab
+
+Created automatically on first load, next to `cards` and `config`. Add a row per
+sentence:
+
+| column | meaning |
+|--------|---------|
+| `id` | any unique value — a label for you, never used by the app |
+| `text` | the sentence — **the only column that is ever spoken**, so it must be in the language you're studying — **Markdown** |
+| `note` | your translation, or the thing to notice (a tense, a clause order). Shown on screen, **never read aloud** — **Markdown** |
+| `tag` | optional label (`perfectum`, `bijzin`, …) — shown as a badge |
+| `added` | date reference (your own) |
+| `exclude` | holds `x` to drop the sentence from the player |
+
+Soak speaks `text` in the same **`target_language`** your cards are read in —
+there's one study language per Sheet, so there is nothing extra to set up.
 
 ## Scheduling (Leitner)
 

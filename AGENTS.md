@@ -110,7 +110,7 @@ Sheet, regardless of access level.
 ## Project files (what gets pushed)
 `.claspignore` limits the push to three files:
 - `Code.js` — backend: `doGet`, Leitner logic, sheet I/O, the
-  `getSession` / `getWeakCards` / `gradeCard` / `updateCard` API.
+  `getSession` / `getWeakCards` / `getSentences` / `gradeCard` / `updateCard` API.
   `getWeakCards` returns low-box cards for the schedule-neutral practice
   drill (the client grades them without writing back). Also owns the `config`
   tab (`readConfig_`), `resetForFork`, and the menu's `checkSheetHealth`
@@ -131,6 +131,16 @@ Tunables live at the top of `Code.js`: `BOX_INTERVALS`, `MAX_BOX`,
 - `box` blank = new card. `flag` = `⚑` when flagged. `exclude` non-empty (`x`) = soft-deleted (skipped).
 - `ensureSchema_()` self-heals missing columns on load without touching data.
 
+## Sentences (`sentences` tab) — [AGENT]
+A third tab, created with its header row on first run by `ensureSentenceSchema_`
+(same self-healing idea as `ensureSchema_`), holding whole sentences for the
+**🎧 Soak** player: `id, text, note, tag, added, exclude`. Read positionally like
+`cards`. `text` is the sentence and the only column ever spoken — in
+`target_language`, the same setting the cards use, so there is nothing extra to
+configure. `note` is displayed but never read aloud. Playback-only: the player
+writes nothing, ever. Nothing to set up for a new deck; leave the tab empty and
+the home button becomes a signpost to it.
+
 ## Settings (`config` tab) — [AGENT]
 A second tab, `config`, holds `key` / `value` rows. It is created with defaults on
 first run (`ensureConfigSchema_`, same self-healing idea as `ensureSchema_`), so
@@ -141,6 +151,8 @@ there is nothing to set up and nothing to migrate.
 | `target_language` | `nl-NL` | The language being studied. BCP-47 tag. **This is the only thing to change for a non-Dutch deck.** |
 | `speech_rate` | `0.9` | Speaking speed. |
 | `auto_speak` | `yes` | Speak the example on reveal? |
+| `sentence_gap` | `1.5` | Seconds of silence after each sentence in 🎧 Soak. |
+| `sentence_repeat` | `1` | Times 🎧 Soak speaks each sentence before moving on. |
 | `update_check` | `yes` | Daily anonymous version-check ping (hashed copy id + app version) to the author's collector endpoint. `no` disables it; also toggleable in the app's ⚙ Settings. |
 | `webapp_url` | *(blank)* | `/exec` link for the Sheet's "Open the app ↗" menu. Blank = auto-detect. |
 

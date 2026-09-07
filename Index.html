@@ -14,6 +14,8 @@
       --green: #2fbf71;
       --red: #e5533c;
       --border: #2b3240;
+      /* The 🎧 Soak player's accent, the way violet marks a drill. */
+      --soak: #2ec4b6;
       --radius: 18px;
     }
     @media (prefers-color-scheme: light) {
@@ -24,6 +26,7 @@
         --text: #1a1d24;
         --muted: #6b7280;
         --border: #e2e5ea;
+        --soak: #0f9b8e;
       }
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -177,6 +180,25 @@
     #session.practice .card { border-color: rgba(139, 123, 255, 0.55); }
     #session.practice .btn-reveal { background: #8b7bff; }
 
+    /* 🎧 Soak — the sentence player. Its own accent so the mode you're in is
+       readable at a glance, the same trick the violet practice theme uses. */
+    #soak { flex: 1; display: flex; flex-direction: column; }
+    #soak .progress .fill { background: var(--soak); }
+    .tool.on { background: rgba(46, 196, 182, 0.18); color: var(--soak); }
+    .soak-card { gap: 18px; transition: border-color 0.2s ease; }
+    .soak-card.speaking { border-color: var(--soak); }
+    /* Smaller than .front (32px): that size is for a single word, and a full
+       sentence at it wraps to four lines on a phone. */
+    .soak-text { font-size: 24px; font-weight: 600; line-height: 1.45; letter-spacing: -0.2px; text-wrap: balance; }
+    .soak-note { font-size: 15px; }
+    .badge.soak { color: var(--soak); border-color: var(--soak); }
+
+    .transport { display: flex; gap: 10px; margin-top: 16px; }
+    .transport button { padding: 18px 0; }
+    .transport .step { flex: none; width: 72px; font-size: 20px; background: var(--card2); color: var(--text); }
+    .transport .play { flex: 1; background: var(--soak); color: #fff; font-size: 18px; }
+    .transport .play.playing { background: var(--card2); color: var(--text); }
+
     /* Editor modal */
     .overlay {
       position: fixed; inset: 0; z-index: 50;
@@ -280,6 +302,7 @@
         <button class="btn-ghost hidden" id="errors-btn" onclick="startErrorDrill()">Today’s mistakes</button>
         <button class="btn-ghost" id="practice-btn" onclick="startPractice()">Weak cards</button>
       </div>
+      <button class="btn-ghost" id="soak-btn" style="width:100%" onclick="openSoak()">🎧 Soak</button>
       <button class="btn-ghost" style="width:100%" onclick="loadHome()">Refresh</button>
       <div id="flagged-line" class="flagged-line hidden"></div>
       <a class="sheet-link" onclick="openAddCards()">＋ Import cards from a file</a>
@@ -324,6 +347,29 @@
           <span id="right-label">Correct</span>
         </button>
       </div>
+    </div>
+
+    <!-- 🎧 Soak — plays the `sentences` tab aloud. No reveal, no grading, no writes. -->
+    <div id="soak" class="hidden">
+      <div class="progress">
+        <button class="tool quit" id="soak-quit" title="Leave the player" onclick="soakExit()">✕</button>
+        <div class="bar"><div class="fill" id="soak-fill"></div></div>
+        <div class="txt" id="soak-txt">0/0</div>
+        <button class="tool" id="soak-shuffle" title="Shuffle the order" onclick="soakToggleShuffle()">🔀</button>
+      </div>
+
+      <div class="card soak-card" id="soak-card" title="Tap to hear it again" onclick="soakReplay()">
+        <div class="badge soak hidden" id="soak-tag"></div>
+        <div class="soak-text md" id="soak-text"></div>
+        <div class="notes md soak-note" id="soak-note"></div>
+      </div>
+
+      <div class="transport">
+        <button class="step" id="soak-prev" title="Previous sentence" onclick="soakPrev()">⏮</button>
+        <button class="play" id="soak-play" onclick="soakToggle()">▶ Play</button>
+        <button class="step" id="soak-next" title="Next sentence" onclick="soakNext()">⏭</button>
+      </div>
+      <a id="soak-sheet-link" class="sheet-link" href="#" target="_blank" rel="noopener">✏️ Edit sentences in Google Sheet ↗</a>
     </div>
 
     <!-- Summary -->
@@ -372,6 +418,23 @@
         <input type="checkbox" id="set-autospeak">
       </div>
 
+      <div class="section">
+        <label for="set-gap">Pause after each sentence <span class="hint">🎧 Soak</span></label>
+        <select id="set-gap">
+          <option value="0.5">Short — 0.5 seconds</option>
+          <option value="1">1 second</option>
+          <option value="1.5">1.5 seconds</option>
+          <option value="2.5">2.5 seconds</option>
+          <option value="4">Long — 4 seconds</option>
+        </select>
+        <label for="set-repeat" style="margin-top:12px">Repeat each sentence</label>
+        <select id="set-repeat">
+          <option value="1">Once</option>
+          <option value="2">Twice</option>
+          <option value="3">Three times</option>
+        </select>
+      </div>
+
       <div class="section" id="set-update-wrap">
         <div class="row">
           <label for="set-updatecheck">Tell me when an update is available</label>
@@ -418,6 +481,33 @@
     </div>
   </div>
 
+  <!-- Add sentences modal -->
+  <div id="addsentences" class="overlay hidden" onclick="if(event.target===this) closeAddSentences()">
+    <div class="panel">
+      <h3>🎧 Where sentences live</h3>
+      <p style="color:var(--muted);font-size:14px;margin:0">
+        Soak plays whole sentences aloud, one at a time, with a silence after
+        each — no front, no back, nothing to grade. They live in their own
+        <strong>sentences</strong> tab of the same Sheet:
+      </p>
+      <ol class="steps">
+        <li>Tap <strong>Open the sentences tab</strong> below, then add a row.</li>
+        <li><strong>text</strong> — the sentence itself. This is the only column that gets spoken, so it must be in the language you're studying.</li>
+        <li><strong>note</strong> — your translation, or the thing to notice (a tense, a clause order). Shown on screen, never read aloud.</li>
+        <li><strong>tag</strong> — optional label like <code>perfectum</code> or <code>bijzin</code>, shown as a badge. Leave <code>id</code>, <code>added</code> and <code>exclude</code> blank.</li>
+      </ol>
+      <p style="color:var(--muted);font-size:13px;margin:6px 0 0">
+        Keep the app in front while it plays — phones suspend speech when the
+        screen locks or you switch apps, so Soak pauses itself and waits for you.
+      </p>
+      <div class="editor-actions">
+        <button class="btn-ghost" onclick="closeAddSentences()">Close</button>
+        <a class="btn-primary" id="addsentences-open" href="#" target="_blank" rel="noopener"
+           style="text-align:center;text-decoration:none;padding:14px" onclick="closeAddSentences()">Open the sentences tab ↗</a>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
 
   <script>
@@ -430,7 +520,7 @@
     var drill = 'weak';  // which drill mode 'practice' is running: 'weak' | 'errors'
 
     function show(id) {
-      ['loading', 'error', 'home', 'session', 'summary'].forEach(function (s) {
+      ['loading', 'error', 'home', 'session', 'summary', 'soak'].forEach(function (s) {
         document.getElementById(s).classList.toggle('hidden', s !== id);
       });
       // The settings gear only makes sense on home (it needs the loaded config).
@@ -527,6 +617,14 @@
       var errBtn = document.getElementById('errors-btn');
       errBtn.textContent = 'Today’s mistakes (' + errs + ')';
       errBtn.classList.toggle('hidden', errs === 0);
+
+      // 🎧 Soak: the sentences tab, played aloud. Deliberately never hidden —
+      // at zero this button is the only signpost to where sentences go, so it
+      // opens the explainer instead of dead-ending in an empty player.
+      var sc = (typeof data.sentenceCount === 'number') ? data.sentenceCount : 0;
+      document.getElementById('soak-btn').textContent =
+        sc ? '🎧 Soak (' + sc + ')' : '🎧 Soak — add sentences';
+
       show('home');
       checkForUpdate_();
     }
@@ -845,39 +943,56 @@
     // All the speak() calls are queued synchronously rather than chained through
     // onend + setTimeout, so every one of them still happens inside the tap that
     // triggered it — iOS is strict about speech starting from a user gesture.
+    // Why `text` cannot be spoken in the configured language, or '' when it can.
+    // Split out of speak() so the 🎧 Soak player runs this exact gate rather
+    // than growing a second copy that drifts away from it.
+    function speechBlocker_(text) {
+      if (!speechOn) return 'This browser has no speech support';
+      var lang = cfg_('target_language', 'nl-NL');
+      // Say nothing rather than something absurd. A voice that can't render the
+      // script drops every glyph and then reads the leftover punctuation by
+      // name — that is how a Chinese deck on a Dutch voice became "puntpunt".
+      if (scriptMismatch_(text, lang)) {
+        return 'This doesn\'t look like ' + lang + ' — check target_language in the Sheet\'s config tab';
+      }
+      // getVoices() is empty until the engine populates it, so an empty list
+      // means "don't know yet", not "none installed" — don't cry wolf then.
+      if (!pickVoice_(lang) && speechSynthesis.getVoices().length) {
+        return 'No ' + lang + ' voice on this device — add one in your system settings';
+      }
+      return '';
+    }
+
+    // One configured utterance for one phrase. Assumes speechBlocker_ has
+    // already passed: it applies the settings, it does not re-check them.
+    function makeUtterance_(text) {
+      var lang = cfg_('target_language', 'nl-NL');
+      var rate = parseFloat(cfg_('speech_rate', '0.9'));
+      if (!isFinite(rate) || rate <= 0) rate = 0.9;
+      var voice = pickVoice_(lang);
+      var u = new SpeechSynthesisUtterance(endStopped_(text));
+      u.lang = lang;
+      if (voice) u.voice = voice;
+      u.rate = rate;
+      return u;
+    }
+
     function speak(parts) {
       if (!speechOn) return;
       if (typeof parts === 'string') parts = [parts];
       parts = parts.filter(function (p) { return p && String(p).trim(); });
       if (!parts.length) return;
 
-      var lang = cfg_('target_language', 'nl-NL');
-
-      // Say nothing rather than something absurd. A voice that can't render the
-      // script drops every glyph and then reads the leftover punctuation by
-      // name — that is how a Chinese deck on a Dutch voice became "puntpunt".
-      if (scriptMismatch_(parts.join(' '), lang)) {
-        showToast('These cards don\'t look like ' + lang + ' — check target_language in the Sheet\'s config tab');
-        return;
-      }
-      // getVoices() is empty until the engine populates it, so an empty list
-      // means "don't know yet", not "none installed" — don't cry wolf then.
-      var voice = pickVoice_(lang);
-      if (!voice && speechSynthesis.getVoices().length) {
-        showToast('No ' + lang + ' voice on this device — add one in your system settings');
-        return;
-      }
+      // Checked once on the joined text, so a card that can't be spoken toasts
+      // once instead of once per part.
+      var why = speechBlocker_(parts.join(' '));
+      if (why) { showToast(why); return; }
 
       speechSynthesis.cancel(); // a new tap replaces whatever is in flight
-      var rate = parseFloat(cfg_('speech_rate', '0.9'));
-      if (!isFinite(rate) || rate <= 0) rate = 0.9;
       var btn = document.getElementById('speak-btn');
 
       for (var i = 0; i < parts.length; i++) {
-        var u = new SpeechSynthesisUtterance(endStopped_(parts[i]));
-        u.lang = lang;
-        if (voice) u.voice = voice;
-        u.rate = rate;
+        var u = makeUtterance_(parts[i]);
         if (i === 0) u.onstart = function () { btn.classList.add('speaking'); };
         if (i === parts.length - 1) {
           u.onend = u.onerror = function () { btn.classList.remove('speaking'); };
@@ -891,6 +1006,233 @@
       if (!c) return;
       speak(speechPartsFor(c, revealed));
     }
+
+    // ---- 🎧 Soak (the sentence player) ----
+    // Playback, not practice: sentences from the `sentences` tab read aloud one
+    // at a time with a silence after each, so tempo, tense and clause order land
+    // by ear. Nothing is revealed, graded, or written back.
+    var soak = {
+      source: [],     // as the server sent it, so 🔀 can toggle back to sheet order
+      list: [],       // what is actually playing
+      i: 0,           // index into list
+      rep: 0,         // repeats of the current sentence already spoken
+      playing: false,
+      done: false,    // ran off the end; the next ▶ starts over
+      timer: null,
+      shuffled: false
+    };
+
+    // Every utterance carries a token. Some engines fire `onend` on an utterance
+    // killed by speechSynthesis.cancel(), which would advance the player a
+    // second time on every ⏭ and every pause — so a callback only counts while
+    // its token is still the current one.
+    var soakToken = 0;
+
+    function soakGap_() {
+      var v = parseFloat(cfg_('sentence_gap', '1.5'));
+      if (!isFinite(v) || v < 0) v = 1.5;
+      return Math.min(v, 30) * 1000;   // a hand-typed 600 in the Sheet isn't a stall
+    }
+    function soakRepeat_() {
+      var v = parseInt(cfg_('sentence_repeat', '1'), 10);
+      if (!isFinite(v) || v < 1) v = 1;
+      return Math.min(v, 10);
+    }
+
+    function shuffleArr_(a) {
+      for (var i = a.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = a[i]; a[i] = a[j]; a[j] = t;
+      }
+      return a;
+    }
+
+    function openSoak() {
+      if (!sessionData) return;
+      if (!sessionData.sentenceCount) { openAddSentences(); return; }
+      show('loading');
+      google.script.run
+        .withSuccessHandler(beginSoak)
+        .withFailureHandler(showError)
+        .getSentences();
+    }
+
+    function beginSoak(res) {
+      var items = (res && res.sentences) ? res.sentences : [];
+      // The count came from getSession; the tab can have been emptied since.
+      if (!items.length) { loadHome(); openAddSentences(); return; }
+
+      soak.source = items;
+      soak.list = soak.shuffled ? shuffleArr_(items.slice()) : items.slice();
+      soak.i = 0; soak.rep = 0; soak.playing = false; soak.done = false;
+      if (res.total && res.total > items.length) {
+        showToast('Playing the first ' + items.length + ' of ' + res.total);
+      }
+
+      var link = document.getElementById('soak-sheet-link');
+      var url = sessionData && (sessionData.sentencesUrl || sessionData.sheetUrl);
+      if (url) { link.href = url; link.style.display = ''; }
+      else { link.style.display = 'none'; }
+
+      show('soak');
+      soakRender();
+      // Deliberately starts paused. The first utterance has to happen inside a
+      // tap — iOS requires speech to begin from a user gesture, and a server
+      // callback is not one.
+    }
+
+    function soakRender() {
+      var item = soak.list[soak.i];
+      if (!item) return;
+      document.getElementById('soak-txt').textContent = (soak.i + 1) + '/' + soak.list.length;
+      document.getElementById('soak-fill').style.width =
+        ((soak.i + 1) / soak.list.length * 100) + '%';
+      var tag = document.getElementById('soak-tag');
+      tag.textContent = item.tag || '';
+      tag.classList.toggle('hidden', !item.tag);
+      document.getElementById('soak-text').innerHTML = md(item.text);
+      setMd('soak-note', item.note);
+      soakSetSpeaking(false);
+      soakUpdateTransport();
+    }
+
+    function soakUpdateTransport() {
+      var btn = document.getElementById('soak-play');
+      btn.textContent = soak.playing ? '⏸ Pause' : (soak.done ? '▶ Play again' : '▶ Play');
+      btn.classList.toggle('playing', soak.playing);
+      document.getElementById('soak-shuffle').classList.toggle('on', soak.shuffled);
+    }
+
+    function soakSetSpeaking(on) {
+      document.getElementById('soak-card').classList.toggle('speaking', !!on);
+    }
+
+    function soakToggle() { if (soak.playing) soakPause(); else soakPlay(); }
+
+    function soakPlay() {
+      if (!soak.list.length) return;
+      if (soak.done) { soak.i = 0; soak.rep = 0; soak.done = false; soakRender(); }
+      soak.playing = true;
+      soakUpdateTransport();
+      acquireWake_();
+      soakSpeak();
+    }
+
+    function soakPause() {
+      soak.playing = false;
+      if (soak.timer) { clearTimeout(soak.timer); soak.timer = null; }
+      soakToken++;                             // orphan any callback in flight
+      if (speechOn) speechSynthesis.cancel();
+      releaseWake_();
+      soakSetSpeaking(false);
+      soakUpdateTransport();
+    }
+
+    // Speaks the current sentence once. Called while paused (a tap on the text)
+    // it just speaks and stops, because the chain in soakAfter_ only continues
+    // while the player is running.
+    function soakSpeak() {
+      var item = soak.list[soak.i];
+      if (!item) return;
+      // Speak the RENDERED text, never the raw cell: **heftige** would
+      // otherwise be read out with its asterisks. `note` is never spoken.
+      var text = mdText_(item.text);
+      if (!text) return;
+      var why = speechBlocker_(text);
+      if (why) { showToast(why); if (soak.playing) soakPause(); return; }
+
+      var token = ++soakToken;
+      var u = makeUtterance_(text);
+      u.onstart = function () { if (token === soakToken) soakSetSpeaking(true); };
+      u.onend = u.onerror = function () {
+        if (token !== soakToken) return;       // cancelled, or superseded
+        soakSetSpeaking(false);
+        if (soak.playing) soakAfter_();
+      };
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+
+    // The silence, then either this sentence again (sentence_repeat) or the next
+    // one. The pause is the whole point of the mode — it's where it lands.
+    function soakAfter_() {
+      soak.timer = setTimeout(function () {
+        soak.timer = null;
+        if (!soak.playing) return;
+        if (++soak.rep < soakRepeat_()) { soakSpeak(); return; }
+        soak.rep = 0;
+        if (soak.i + 1 >= soak.list.length) return soakFinish_();
+        soak.i++;
+        soakRender();
+        soakSpeak();
+      }, soakGap_());
+    }
+
+    function soakFinish_() {
+      soak.playing = false;
+      soak.done = true;
+      soakToken++;
+      releaseWake_();
+      soakSetSpeaking(false);
+      soakUpdateTransport();
+      showToast('End of the list');
+    }
+
+    function soakGo_(i) {
+      if (!soak.list.length) return;
+      soak.i = Math.max(0, Math.min(i, soak.list.length - 1));
+      soak.rep = 0;
+      soak.done = false;
+      if (soak.timer) { clearTimeout(soak.timer); soak.timer = null; }
+      soakRender();
+      if (soak.playing) soakSpeak();
+      else if (speechOn) { soakToken++; speechSynthesis.cancel(); }
+    }
+    function soakPrev() { soakGo_(soak.i - 1); }
+    function soakNext() { soakGo_(soak.i + 1); }
+
+    // Tapping the sentence hears it again.
+    function soakReplay() { soakSpeak(); }
+
+    function soakToggleShuffle() {
+      soak.shuffled = !soak.shuffled;
+      soak.list = soak.shuffled ? shuffleArr_(soak.source.slice()) : soak.source.slice();
+      soakGo_(0);
+      showToast(soak.shuffled ? '🔀 Shuffled' : 'Back to sheet order');
+    }
+
+    function soakExit() {
+      soakPause();
+      loadHome();
+    }
+
+    // ---- Screen wake lock ----
+    // Held only while the player runs, so the phone doesn't sleep three
+    // sentences in. Entirely best-effort: an unsupported browser or a refused
+    // request just means the screen dims as usual, never a visible error.
+    var wakeLock = null;
+    function acquireWake_() {
+      try {
+        if (!navigator.wakeLock || wakeLock) return;
+        navigator.wakeLock.request('screen').then(function (lock) {
+          wakeLock = lock;
+          lock.addEventListener('release', function () { wakeLock = null; });
+        }).catch(function () { /* denied, or not allowed in this context */ });
+      } catch (e) { /* no wakeLock API at all */ }
+    }
+    function releaseWake_() {
+      try { if (wakeLock) wakeLock.release(); } catch (e) {}
+      wakeLock = null;
+    }
+
+    // iOS suspends Web Speech the moment the tab is backgrounded or the screen
+    // locks — the limit that killed the old hands-free autoplay mode, and one
+    // nothing short of pre-generated audio can fix. So pause on purpose:
+    // returning to a paused player beats returning to a silently stuck one, and
+    // resuming is then a ▶ tap, which is exactly the gesture speech needs.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible' && soak.playing) soakPause();
+    });
 
     // ---- Import cards (link out to the Sheet's own importer) ----
     // Deliberately not an in-app parser: Sheets already has one, and delegating
@@ -907,6 +1249,18 @@
       document.getElementById('addcards').classList.remove('hidden');
     }
     function closeAddCards() { document.getElementById('addcards').classList.add('hidden'); }
+
+    // ---- Add sentences (link out to the `sentences` tab) ----
+    // Same reasoning as the card importer: the Sheet is the editor, so this is
+    // a signpost plus a deep link, not an in-app form.
+    function openAddSentences() {
+      var open = document.getElementById('addsentences-open');
+      var url = sessionData && (sessionData.sentencesUrl || sessionData.sheetUrl);
+      if (url) { open.href = url; open.style.display = ''; }
+      else { open.style.display = 'none'; }
+      document.getElementById('addsentences').classList.remove('hidden');
+    }
+    function closeAddSentences() { document.getElementById('addsentences').classList.add('hidden'); }
 
     // ---- Settings ----
     // Fill a language <select> from the voices actually installed (so any pick
@@ -957,6 +1311,17 @@
       return v === '__other__' ? document.getElementById(otherId).value.trim() : v;
     }
 
+    // The option value closest to `want`, numerically.
+    function nearestOption_(selectId, want) {
+      var opts = document.getElementById(selectId).options;
+      var best = opts[0].value, dist = Infinity;
+      for (var i = 0; i < opts.length; i++) {
+        var d = Math.abs(parseFloat(opts[i].value) - want);
+        if (d < dist) { dist = d; best = opts[i].value; }
+      }
+      return best;
+    }
+
     function openSettings() {
       if (!sessionData || !sessionData.config) { showToast('Still loading — try again in a moment'); return; }
       var c = sessionData.config;
@@ -969,6 +1334,14 @@
       document.getElementById('set-rate').value = rate <= 0.8 ? '0.7' : (rate >= 1.0 ? '1.1' : '0.9');
       document.getElementById('set-autospeak').checked =
         String(c.auto_speak == null ? 'yes' : c.auto_speak).toLowerCase() === 'yes';
+      // Snap to the nearest offered value, so a hand-typed cell (sentence_gap = 2)
+      // still selects something instead of leaving the picker blank.
+      var gap = parseFloat(c.sentence_gap);
+      if (!isFinite(gap) || gap < 0) gap = 1.5;
+      document.getElementById('set-gap').value = nearestOption_('set-gap', gap);
+      var rep = parseInt(c.sentence_repeat, 10);
+      if (!isFinite(rep) || rep < 1) rep = 1;
+      document.getElementById('set-repeat').value = nearestOption_('set-repeat', rep);
       document.getElementById('set-updatecheck').checked =
         String(c.update_check == null ? 'yes' : c.update_check).toLowerCase() === 'yes';
       // A fork that blanked UPDATE_CHECK_URL sends nothing regardless — don't
@@ -983,7 +1356,7 @@
       // its value was set while the modal was still display:none; forcing each
       // one to re-lay-out now that it's actually visible clears it up.
       requestAnimationFrame(function () {
-        ['set-lang', 'set-rate'].forEach(function (id) {
+        ['set-lang', 'set-rate', 'set-gap', 'set-repeat'].forEach(function (id) {
           var el = document.getElementById(id);
           if (!el) return;
           el.style.display = 'none';
@@ -1001,6 +1374,8 @@
         target_language: lang,
         speech_rate: document.getElementById('set-rate').value,
         auto_speak: document.getElementById('set-autospeak').checked ? 'yes' : 'no',
+        sentence_gap: document.getElementById('set-gap').value,
+        sentence_repeat: document.getElementById('set-repeat').value,
         update_check: document.getElementById('set-updatecheck').checked ? 'yes' : 'no'
       };
 
