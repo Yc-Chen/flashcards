@@ -30,7 +30,7 @@ the Sheet *and* the app in one click, no CLI. See [Deploy your own](#deploy-your
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/home.png" alt="Home screen — due/new counts, Leitner boxes, and the Weak cards and 🎧 Soak buttons" width="300">
+  <img src="docs/screenshots/home.png" alt="Home screen — due/new counts, Leitner boxes, and the Today's mistakes, Weak cards and 🎧 Soak buttons" width="300">
   &nbsp;&nbsp;
   <img src="docs/screenshots/card.png" alt="Practice card with speak / flag / edit / exclude tools" width="300">
 </p>
