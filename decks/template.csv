@@ -1,0 +1,3 @@
+id,type,front_side,back_side,notes,box,due,last_seen,right,wrong,added,flag,exclude,last_wrong
+1,セキュリティ,Forward Secrecyとは？,長期鍵が漏えいしても過去の通信内容を復号しにくくする性質,セッションごとに一時鍵を使う,,,,,,,,,
+2,ネットワーク,ARPの役割は？,IPv4でIPアドレスからMACアドレスを調べること,同一L2ネットワーク内で利用,,,,,,,,,
