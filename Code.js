@@ -1,1127 +1,457 @@
 /**
- * Flashcards — Google Sheets–backed Leitner web app.
+ * 単語帳 — Google Sheets をデータベースに使う日本語向けフラッシュカード。
  *
- * The bound spreadsheet is the database. One row per card in the `cards` tab.
- * All proficiency state lives in plain columns so it can be inspected / fixed
- * by hand in the sheet.
+ * 1 行 = 1 カード。学習履歴もすべて `cards` シートに保存するため、
+ * Mac / iPhone から同じ Web アプリを開けば同じ状態を共有できます。
  */
 
-// ---- Tunable constants -----------------------------------------------------
-
-// The released version of this app. Single source of truth: the web app shows
-// it in ⚙ Settings, the Sheet menu shows it in About, and the daily update
-// check compares it against the collector's `latest_version`. Bump it here (and
-// nowhere else) when you release — see collector/README.md.
-var APP_VERSION = '1.2.0';
-
+var APP_VERSION = '2.0.0-ja';
 var SHEET_NAME = 'cards';
 
-// Leitner boxes 1..5 and how many days until a card in each box is due again.
-var BOX_INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16 };
-var MAX_BOX = 5;
-
-// "Already knew it" on a brand-new card jumps straight to this box.
-var KNOWN_START_BOX = 4;
-
-// How many never-studied cards to introduce per session.
-var NEW_PER_SESSION = 10;
-
-// How many weak (low-box) cards to serve in a schedule-neutral practice drill.
-var PRACTICE_LIMIT = 20;
-
-// Cap for the "today's mistakes" drill. A day's errors are naturally few; this
-// is only a runaway guard.
-var ERROR_DRILL_LIMIT = 50;
-
-// Column order in the sheet. Keep in sync with the header row.
-// front_side / back_side / notes all support Markdown.
-// `flag`      holds a marker (FLAG_MARK) when you flag a card for later editing.
-// `exclude`   holds a marker (any non-empty value) to drop a card from practice.
-// `last_wrong` is the date ('yyyy-MM-dd') a card was most recently answered
-//   wrong — used to surface recently-missed cards. New columns MUST be appended
-//   at the end: reads/writes are positional, so inserting mid-list would shift
-//   existing data under the wrong headers.
 var HEADERS = [
   'id', 'type', 'front_side', 'back_side', 'notes',
   'box', 'due', 'last_seen', 'right', 'wrong', 'added', 'flag', 'exclude', 'last_wrong'
 ];
 
-// Value written to the `flag` column when a card is flagged for review/editing.
+var BOX_INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16 };
+var MAX_BOX = 5;
+var NEW_PER_SESSION = 10;
+var SESSION_LIMIT = 50;
+var PRACTICE_LIMIT = 20;
+var ERROR_DRILL_LIMIT = 50;
 var FLAG_MARK = '⚑';
-// Value written to the `exclude` column to remove a card from practice.
 var EXCLUDE_MARK = 'x';
 
-// Fields the client is allowed to edit / write back to the sheet.
-var EDITABLE_FIELDS = ['front_side', 'back_side', 'notes', 'flag', 'exclude'];
-
-// Columns resetForFork wipes: everything the app writes as you study.
-// `exclude` is deliberately not here — it marks cards as bad, which is deck
-// curation worth inheriting, not personal progress.
-var PROGRESS_FIELDS = ['box', 'due', 'last_seen', 'right', 'wrong', 'flag', 'last_wrong'];
-
-// ---- Config tab ------------------------------------------------------------
-// A second tab holds user settings as key/value rows. It exists so that using
-// this app for another language means editing one cell — not editing code and
-// pushing it. Someone who copied the Sheet may never open the Apps Script
-// editor at all.
-
-var CONFIG_SHEET_NAME = 'config';
-var CONFIG_HEADERS = ['key', 'value', 'description'];
-
-// key, default value, description. The description column is the only
-// documentation a Sheet-copier is guaranteed to see, so it has to stand alone.
-var DEFAULT_CONFIG = [
-  ['target_language', 'nl-NL',
-    'The language you are studying. BCP-47 tag, e.g. nl-NL, zh-CN, fr-FR, de-DE.'],
-  ['speech_rate', '0.9',
-    'Speaking speed. 0.5 = slow, 1 = normal.'],
-  ['auto_speak', 'yes',
-    'Speak the example sentence when you reveal an answer? yes / no'],
-  ['sentence_gap', '1.5',
-    'Seconds of silence after each sentence in the 🎧 Soak player. 0 = no pause.'],
-  ['sentence_repeat', '1',
-    'How many times each sentence is spoken before the 🎧 Soak player moves on.'],
-  ['new_card_order', 'random',
-    'How a study session picks its new cards: "random" (shuffle the deck) or "recent" (most recently added first, by the `added` date).'],
-  ['update_check', 'yes',
-    'Check for app updates on startup? Sends one anonymous ping a day (an unrecognizable fingerprint of this copy + app version, nothing else) that also lets the author count active users. yes / no'],
-  ['webapp_url', '',
-    'The /exec link of your own deployment. Leave blank to auto-detect.']
-];
-
-// ---- Sentences tab ---------------------------------------------------------
-// A third tab holds whole sentences, kept for their *shape* — tense, clause
-// order, tempo — rather than for a word you don't know. The 🎧 Soak player
-// reads them aloud one at a time with a silence after each. Nothing here is
-// ever graded, scheduled or written back: it is a player, not a drill.
-
-var SENTENCE_SHEET_NAME = 'sentences';
-
-// Column order in the sentences tab. Positional like HEADERS — new columns
-// MUST be appended at the end.
-// `text`    the sentence itself, and the ONLY thing ever spoken.
-// `note`    your translation, or the thing to notice. Never spoken — exactly
-//           as the native-language gloss on a card is never spoken.
-// `tag`     optional label (`perfectum`, `bijzin`, …), shown as a badge.
-// `exclude` non-empty (`x`) drops the row from the player, as it does in `cards`.
-//
-// There is deliberately NO language column, now or later: `text` is in
-// `target_language` from the config tab, the same setting the cards are read
-// in. One study language per Sheet — which is also what lets scriptMismatch_
-// guard this tab for free.
-var SENTENCE_HEADERS = ['id', 'text', 'note', 'tag', 'added', 'exclude'];
-
-// Payload guard only; a soak list is normally a few dozen rows.
-var SENTENCE_LIMIT = 500;
-
-// ---- Web app entry point ---------------------------------------------------
+var COL = {};
+for (var i = 0; i < HEADERS.length; i++) COL[HEADERS[i]] = i + 1;
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Flashcards')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setTitle('単語帳')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover');
 }
 
-// ---- Spreadsheet menu ------------------------------------------------------
-// Runs when the bound Sheet is opened; adds a "🎴 Flashcards" menu so the app
-// can be opened (and the Sheet checked) without touching the Apps Script editor.
+// -----------------------------------------------------------------------------
+// Google Sheets メニュー
+// -----------------------------------------------------------------------------
 
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('🎴 Flashcards')
-    .addItem('Open the app ↗', 'menuOpenApp_')
+    .createMenu('🎴 単語帳')
+    .addItem('アプリを開く ↗', 'menuOpenApp_')
     .addSeparator()
-    .addItem('Check Sheet health', 'menuCheckSheet_')
-    .addItem('Renumber id column', 'menuRenumberIds_')
+    .addItem('シートを診断', 'menuCheckSheet_')
+    .addItem('IDを振り直す', 'menuRenumberIds_')
     .addSeparator()
-    .addItem('View on GitHub ↗', 'menuGitHub_')
-    .addItem('About Flashcards (v' + APP_VERSION + ')', 'menuAbout_')
+    .addItem('この単語帳について', 'menuAbout_')
     .addToUi();
 }
 
-/**
- * Resolves the web-app URL to open. Prefers `webapp_url` from the config tab,
- * which points at YOUR stable versioned deployment. Falls back to
- * ScriptApp.getService().getUrl(), which returns the HEAD deployment — a
- * different /exec URL from a clasp-versioned one, which is exactly why the cell
- * is worth pinning.
- *
- * The fallback is also what makes a copied Sheet work: `resetForFork` blanks
- * the cell, so a fork resolves to its own deployment rather than the original's.
- */
-function getWebAppUrl_() {
-  var stored = readConfig_().webapp_url;
-  return (stored && stored.trim()) || ScriptApp.getService().getUrl() || '';
-}
-
-/** Menu: pop a dialog with a link to this script's deployed web app. */
 function menuOpenApp_() {
   var ui = SpreadsheetApp.getUi();
-  var url = getWebAppUrl_();
+  var url = ScriptApp.getService().getUrl();
   if (!url) {
-    ui.alert('Flashcards',
-      'No web-app URL yet. Deploy the script as a web app, then paste the /exec ' +
-      'link into the `webapp_url` row of the "config" tab. Full deploy steps are ' +
-      'in the GitHub repo (see "View on GitHub ↗").',
-      ui.ButtonSet.OK);
+    ui.alert(
+      '🎴 単語帳',
+      'まだ Web アプリとしてデプロイされていません。\n\nApps Script の「デプロイ」→「新しいデプロイ」から Web アプリとして公開してください。',
+      ui.ButtonSet.OK
+    );
     return;
   }
-  var safe = url.replace(/"/g, '&quot;');
+
+  var safeUrl = escapeHtmlAttribute_(url);
   var html = HtmlService.createHtmlOutput(
-    '<div style="font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 4px">' +
-      '<p style="margin:0 0 14px">Open the Flashcards app in a new tab:</p>' +
-      '<p style="margin:0"><a href="' + safe + '" target="_blank" rel="noopener" ' +
+    '<div style="font:14px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;padding:10px">' +
+      '<p style="margin:0 0 14px">単語帳を新しいタブで開きます。</p>' +
+      '<a href="' + safeUrl + '" target="_blank" rel="noopener" ' +
         'style="display:inline-block;background:#4f8cff;color:#fff;text-decoration:none;' +
-        'font-weight:700;padding:10px 16px;border-radius:10px">🎴 Open Flashcards ↗</a></p>' +
+        'font-weight:700;padding:10px 16px;border-radius:10px">🎴 単語帳を開く ↗</a>' +
     '</div>'
-  ).setWidth(300).setHeight(130);
-  ui.showModalDialog(html, '🎴 Flashcards');
+  ).setWidth(320).setHeight(135);
+
+  ui.showModalDialog(html, '🎴 単語帳');
 }
 
-/** Menu: report whether the tab and column names match what the code expects. */
 function menuCheckSheet_() {
-  SpreadsheetApp.getUi().alert('🎴 Sheet health', checkSheetHealth(), SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert(
+    '🎴 シート診断',
+    checkSheetHealth(),
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
-/**
- * Read-only sanity check of the spreadsheet layout: are the `cards` and
- * `config` tabs there, and does every header cell say what the code expects?
- * Reads and writes are positional, so a renamed or reordered column silently
- * lands data in the wrong place — this is the diagnostic for that, typically
- * after a File → Import with "Replace current sheet" mangled the header.
- *
- * Deliberately fixes nothing: ensureSchema_ already fills EMPTY header cells
- * on every app load, so what this mostly catches is a wrong (non-empty)
- * label — and whether the label or the data underneath it should move is a
- * call only the owner can make.
- */
-function checkSheetHealth() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var problems = [];
-
-  var cards = ss.getSheetByName(SHEET_NAME);
-  if (!cards) {
-    problems.push('❌ No "' + SHEET_NAME + '" tab found. If your cards live under ' +
-      'another name, rename that tab to "' + SHEET_NAME + '" — otherwise the app ' +
-      'creates an empty one on next load.');
-  } else {
-    problems = problems.concat(checkHeaderRow_(cards, HEADERS));
-  }
-
-  var config = ss.getSheetByName(CONFIG_SHEET_NAME);
-  if (!config) {
-    problems.push('⚠️ No "' + CONFIG_SHEET_NAME + '" tab — the app recreates it ' +
-      'with defaults on next load, so this fixes itself.');
-  } else {
-    problems = problems.concat(checkHeaderRow_(config, CONFIG_HEADERS));
-  }
-
-  // The sentences tab is read positionally too, so a mangled header there fails
-  // exactly as silently as one in `cards` — it belongs in this diagnostic.
-  var sentences = ss.getSheetByName(SENTENCE_SHEET_NAME);
-  if (!sentences) {
-    problems.push('⚠️ No "' + SENTENCE_SHEET_NAME + '" tab — the app recreates it ' +
-      'with headers on next load, so this fixes itself.');
-  } else {
-    problems = problems.concat(checkHeaderRow_(sentences, SENTENCE_HEADERS));
-  }
-
-  if (problems.length) return problems.join('\n\n');
-  var rows = cards.getLastRow() - 1;
-  var lines = sentences.getLastRow() - 1;
-  return '✅ All good.\n\n"' + SHEET_NAME + '", "' + CONFIG_SHEET_NAME + '" and "' +
-    SENTENCE_SHEET_NAME + '" tabs found and every column name is correct.\n\n' +
-    rows + ' card row' + (rows === 1 ? '' : 's') + ' · ' +
-    lines + ' sentence row' + (lines === 1 ? '' : 's') + '.';
-}
-
-/** Compares a sheet's header row against `expected`; returns problem strings. */
-function checkHeaderRow_(sheet, expected) {
-  var problems = [];
-  var width = Math.min(sheet.getMaxColumns(), expected.length);
-  var header = width > 0 ? sheet.getRange(1, 1, 1, width).getValues()[0] : [];
-  for (var i = 0; i < expected.length; i++) {
-    var got = i < width ? String(header[i]).trim() : '';
-    if (got === expected[i]) continue;
-    problems.push('❌ "' + sheet.getName() + '" tab, column ' +
-      String.fromCharCode(65 + i) + ': header is ' +
-      (got ? '"' + got + '"' : 'blank') + ' but should be "' + expected[i] + '".');
-  }
-  return problems;
-}
-
-/** Menu: confirm, then renumber the `id` column 1…N in row order. */
 function menuRenumberIds_() {
   var ui = SpreadsheetApp.getUi();
-  var answer = ui.alert('🎴 Renumber ids',
-    'Rewrite the "id" column so cards are numbered 1, 2, 3 … in the order they ' +
-    'sit in the sheet, closing the gaps left by deleted rows.\n\n' +
-    'Your cards and your progress are untouched: the app finds a card by its ' +
-    'row, never by its id. But the old numbers are gone for good — anything ' +
-    'outside the Sheet that refers to a card by id (an export, a note, a ' +
-    'one-off script) will point at a different card afterwards.\n\n' +
-    'Renumber now?',
-    ui.ButtonSet.YES_NO);
+  var answer = ui.alert(
+    '🎴 IDを振り直す',
+    'cards シートの id を上から 1, 2, 3… と振り直します。\n\n学習履歴やカード本文は変更しません。実行しますか？',
+    ui.ButtonSet.YES_NO
+  );
   if (answer !== ui.Button.YES) return;
-  ui.alert('🎴 Renumber ids', renumberIds(), ui.ButtonSet.OK);
+  ui.alert('🎴 IDを振り直す', renumberIds(), ui.ButtonSet.OK);
+}
+
+function menuAbout_() {
+  SpreadsheetApp.getUi().alert(
+    '🎴 単語帳',
+    '日本語向け Flashcards v' + APP_VERSION + '\n\nカードと学習履歴は、この Google スプレッドシートだけに保存されます。',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+// -----------------------------------------------------------------------------
+// 公開 API（Index.html から google.script.run で呼び出す）
+// -----------------------------------------------------------------------------
+
+function getSession() {
+  var sheet = getSheet_();
+  var cards = readCards_(sheet);
+  var today = today_();
+
+  var active = cards.filter(function (card) {
+    return !card.exclude && card.front_side && card.back_side;
+  });
+
+  var due = active.filter(function (card) {
+    return card.box !== '' && isDue_(card.due, today);
+  });
+
+  var fresh = active.filter(function (card) {
+    return card.box === '';
+  });
+
+  due.sort(function (a, b) {
+    return String(a.due || '').localeCompare(String(b.due || ''));
+  });
+  shuffle_(fresh);
+
+  var queue = due.slice(0, SESSION_LIMIT);
+  var room = Math.max(0, SESSION_LIMIT - queue.length);
+  if (room > 0) queue = queue.concat(fresh.slice(0, Math.min(NEW_PER_SESSION, room)));
+
+  var mistakesToday = active.filter(function (card) {
+    return normalizeDate_(card.last_wrong) === today;
+  }).length;
+
+  var boxCounts = {};
+  for (var box = 1; box <= MAX_BOX; box++) boxCounts[box] = 0;
+  active.forEach(function (card) {
+    var n = Number(card.box);
+    if (n >= 1 && n <= MAX_BOX) boxCounts[n]++;
+  });
+
+  return {
+    appVersion: APP_VERSION,
+    today: today,
+    queue: queue,
+    counts: {
+      total: active.length,
+      due: due.length,
+      fresh: fresh.length,
+      mistakesToday: mistakesToday,
+      flagged: active.filter(function (card) { return card.flag === FLAG_MARK; }).length,
+      box: boxCounts
+    },
+    sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl()
+  };
+}
+
+function getTodaysMistakes(limit) {
+  var max = clampLimit_(limit, ERROR_DRILL_LIMIT);
+  var today = today_();
+  var cards = readCards_(getSheet_()).filter(function (card) {
+    return !card.exclude && card.front_side && card.back_side &&
+      normalizeDate_(card.last_wrong) === today;
+  });
+  shuffle_(cards);
+  return cards.slice(0, max);
+}
+
+function getWeakCards(limit) {
+  var max = clampLimit_(limit, PRACTICE_LIMIT);
+  var cards = readCards_(getSheet_()).filter(function (card) {
+    return !card.exclude && card.front_side && card.back_side && card.box !== '';
+  });
+
+  cards.forEach(function (card) {
+    var right = Number(card.right) || 0;
+    var wrong = Number(card.wrong) || 0;
+    var attempts = right + wrong;
+    var errorRate = attempts ? wrong / attempts : 0;
+    var box = Number(card.box) || 1;
+    card._weakScore = (errorRate * 100) + ((MAX_BOX - box) * 12) + Math.min(wrong, 10);
+  });
+
+  cards.sort(function (a, b) {
+    return b._weakScore - a._weakScore;
+  });
+
+  return cards.slice(0, max).map(function (card) {
+    delete card._weakScore;
+    return card;
+  });
 }
 
 /**
- * Rewrites column A as 1…N in sheet order, so ids stay contiguous after rows
- * are deleted and blank ids on hand-added rows get filled.
- *
- * Safe by construction: `id` is a human-facing handle only — every read and
- * write in this file addresses a card by its 1-based sheet row (`_row`), so
- * renumbering cannot touch scheduling, stats or the queue.
- *
- * Fully blank rows keep a blank id (matching readCards_, which skips them), so
- * spacer rows don't consume a number. One bulk read + one bulk write: per-cell
- * writes time out on a deck of a few thousand cards.
+ * 通常学習ではスケジュールと正誤回数を更新します。
+ * practice=true のときは「今日の間違い」「苦手カード」用の復習なので、
+ * 学習スケジュールを変更しません。
  */
+function gradeCard(rowNumber, correct, practice) {
+  var row = validateRow_(rowNumber);
+  if (practice) return { ok: true, practice: true };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var sheet = getSheet_();
+    if (row > sheet.getLastRow()) throw new Error('カードの行が見つかりません。アプリを再読み込みしてください。');
+
+    var values = sheet.getRange(row, 1, 1, HEADERS.length).getValues()[0];
+    if (!String(values[COL.front_side - 1] || '').trim()) {
+      throw new Error('この行にはカードがありません。アプリを再読み込みしてください。');
+    }
+
+    var currentBox = Number(values[COL.box - 1]) || 0;
+    var newBox = correct ? Math.min(MAX_BOX, currentBox > 0 ? currentBox + 1 : 2) : 1;
+    var today = today_();
+    var due = addDays_(today, BOX_INTERVALS[newBox]);
+    var right = Number(values[COL.right - 1]) || 0;
+    var wrong = Number(values[COL.wrong - 1]) || 0;
+
+    sheet.getRange(row, COL.box).setValue(newBox);
+    sheet.getRange(row, COL.due).setValue(due);
+    sheet.getRange(row, COL.last_seen).setValue(today);
+
+    if (correct) {
+      sheet.getRange(row, COL.right).setValue(right + 1);
+    } else {
+      sheet.getRange(row, COL.wrong).setValue(wrong + 1);
+      sheet.getRange(row, COL.last_wrong).setValue(today);
+    }
+
+    return { ok: true, box: newBox, due: due };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateCard(rowNumber, patch) {
+  var row = validateRow_(rowNumber);
+  patch = patch || {};
+  var allowed = ['front_side', 'back_side', 'notes', 'flag', 'exclude'];
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var sheet = getSheet_();
+    if (row > sheet.getLastRow()) throw new Error('カードの行が見つかりません。アプリを再読み込みしてください。');
+
+    allowed.forEach(function (key) {
+      if (!Object.prototype.hasOwnProperty.call(patch, key)) return;
+      var value = patch[key] == null ? '' : String(patch[key]);
+      var range = sheet.getRange(row, COL[key]);
+      // `=`, `+`, `-`, `@` で始まる内容が数式として解釈されないよう、
+      // 編集可能なテキスト列は明示的にプレーンテキスト形式へ固定します。
+      range.setNumberFormat('@');
+      range.setValue(value);
+    });
+
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function checkSheetHealth() {
+  var sheet = getSheet_();
+  var width = Math.min(sheet.getMaxColumns(), HEADERS.length);
+  var got = sheet.getRange(1, 1, 1, width).getValues()[0];
+  var problems = [];
+
+  for (var i = 0; i < HEADERS.length; i++) {
+    var actual = i < got.length ? String(got[i] || '').trim() : '';
+    if (actual !== HEADERS[i]) {
+      problems.push('列 ' + columnName_(i + 1) + ': 「' + (actual || '空欄') + '」→ 正しくは「' + HEADERS[i] + '」');
+    }
+  }
+
+  if (problems.length) {
+    return '❌ cards シートの列名または順番に問題があります。\n\n' + problems.join('\n');
+  }
+
+  return '✅ 問題ありません。\n\ncards シートの列名と順番は正しい状態です。';
+}
+
 function renumberIds() {
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
     var sheet = getSheet_();
     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return 'No cards to renumber.';
+    if (lastRow < 2) return 'カードがありません。';
 
-    // Read every column, not just A: whether a row is a card depends on the
-    // rest of it, and a row whose only content is a stale id is still a card.
     var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
     var ids = [];
-    var n = 0;
-    for (var r = 0; r < values.length; r++) {
-      var blank = values[r].every(function (c) { return c === '' || c === null; });
-      ids.push([blank ? '' : ++n]);
-    }
-    sheet.getRange(2, 1, ids.length, 1).setValues(ids);
-    return n
-      ? 'Renumbered ' + n + ' card' + (n === 1 ? '' : 's') + ': id 1…' + n + '.'
-      : 'No cards to renumber.';
+    var next = 0;
+
+    values.forEach(function (row) {
+      var blank = row.every(function (cell) { return cell === '' || cell === null; });
+      ids.push([blank ? '' : ++next]);
+    });
+
+    sheet.getRange(2, COL.id, ids.length, 1).setValues(ids);
+    return next + ' 件のカードを 1〜' + next + ' に振り直しました。';
   } finally {
     lock.releaseLock();
   }
 }
 
-/** Menu: pop a dialog with a link to the project's GitHub repo (setup + source). */
-function menuGitHub_() {
-  var url = 'https://github.com/Yc-Chen/flashcards';
-  var html = HtmlService.createHtmlOutput(
-    '<div style="font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 4px">' +
-      '<p style="margin:0 0 14px">Source code, setup and deploy instructions:</p>' +
-      '<p style="margin:0"><a href="' + url + '" target="_blank" rel="noopener" ' +
-        'style="display:inline-block;background:#4f8cff;color:#fff;text-decoration:none;' +
-        'font-weight:700;padding:10px 16px;border-radius:10px">View on GitHub ↗</a></p>' +
-    '</div>'
-  ).setWidth(320).setHeight(130);
-  SpreadsheetApp.getUi().showModalDialog(html, '🎴 Flashcards');
-}
-
-/**
- * Menu: which version this copy is running, and how to update it.
- *
- * The version is worth surfacing here and not only in the app because updating
- * is a Sheet-side job (Extensions → Apps Script → redeploy), so this is where
- * someone stands when they need to know what they've got.
- */
-function menuAbout_() {
-  var repo = 'https://github.com/Yc-Chen/flashcards';
-  var html = HtmlService.createHtmlOutput(
-    '<div style="font:14px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 4px">' +
-      '<p style="margin:0 0 6px;font-size:16px"><strong>🎴 Flashcards</strong></p>' +
-      '<p style="margin:0 0 14px;color:#5f6368">Version <strong>' + APP_VERSION + '</strong></p>' +
-      '<p style="margin:0 0 14px">This copy is yours — it never updates itself. ' +
-        'The app tells you on its home screen when a newer version is out.</p>' +
-      '<p style="margin:0">' +
-        '<a href="' + repo + '/blob/main/UPGRADE.md" target="_blank" rel="noopener" ' +
-          'style="display:inline-block;background:#4f8cff;color:#fff;text-decoration:none;' +
-          'font-weight:700;padding:9px 14px;border-radius:10px">How to update ↗</a>' +
-        '&nbsp;&nbsp;<a href="' + repo + '" target="_blank" rel="noopener" ' +
-          'style="color:#4f8cff;text-decoration:none;font-weight:600">GitHub ↗</a>' +
-      '</p>' +
-    '</div>'
-  ).setWidth(340).setHeight(210);
-  SpreadsheetApp.getUi().showModalDialog(html, '🎴 Flashcards');
-}
-
-// ---- Sheet helpers ---------------------------------------------------------
+// -----------------------------------------------------------------------------
+// シート読み書き
+// -----------------------------------------------------------------------------
 
 function getSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SHEET_NAME);
+
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(HEADERS);
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
     sheet.setFrozenRows(1);
+    return sheet;
   }
-  // Make sure the header row exists even if the sheet was created empty.
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(HEADERS);
-    sheet.setFrozenRows(1);
-  }
+
   ensureSchema_(sheet);
   return sheet;
 }
 
-/**
- * Makes the sheet safe to read/write with the current HEADERS: guarantees at
- * least HEADERS.length columns exist and fills any missing header labels
- * (e.g. adds the `flag` column to a sheet imported before it existed).
- * Only fills EMPTY header cells, so it never clobbers a label you set.
- */
 function ensureSchema_(sheet) {
-  var need = HEADERS.length;
-  if (sheet.getMaxColumns() < need) {
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), need - sheet.getMaxColumns());
-  }
-  var header = sheet.getRange(1, 1, 1, need).getValues()[0];
-  var changed = false;
-  for (var i = 0; i < need; i++) {
-    if (header[i] === '' || header[i] === null) { header[i] = HEADERS[i]; changed = true; }
-  }
-  if (changed) sheet.getRange(1, 1, 1, need).setValues([header]);
-}
-
-// ---- Config helpers --------------------------------------------------------
-// Deliberately parallel to getSheet_/ensureSchema_ rather than a generalization
-// of them: getSheet_ is hardcoded to `cards` and five files (including the
-// one-off maintenance scripts) depend on that exact signature.
-
-function getConfigSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
-  // Insert at the end so `cards` stays the tab you land on.
-  if (!sheet) sheet = ss.insertSheet(CONFIG_SHEET_NAME, ss.getNumSheets());
-  ensureConfigSchema_(sheet);
-  return sheet;
-}
-
-/**
- * Self-heals the config tab the way ensureSchema_ does for `cards`: writes the
- * header if absent and appends any DEFAULT_CONFIG key that isn't there yet, so
- * a newly added setting shows up without the user recreating the tab.
- * Never overwrites a value that is already set.
- */
-function ensureConfigSchema_(sheet) {
-  if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, CONFIG_HEADERS.length).setValues([CONFIG_HEADERS]);
-    sheet.setFrozenRows(1);
-    // At the default 100px, `value` truncates a /exec URL and `description` —
-    // the only documentation a Sheet-copier is guaranteed to see — is unreadable.
-    sheet.setColumnWidth(2, 320);
-    sheet.setColumnWidth(3, 460);
-  }
-  var have = {};
-  var lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    for (var i = 0; i < keys.length; i++) have[String(keys[i][0]).trim()] = true;
-  }
-  var missing = [];
-  for (var d = 0; d < DEFAULT_CONFIG.length; d++) {
-    var key = DEFAULT_CONFIG[d][0];
-    if (!have[key]) missing.push([key, seedConfigValue_(d), DEFAULT_CONFIG[d][2]]);
-  }
-  if (missing.length) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, missing.length, CONFIG_HEADERS.length)
-      .setValues(missing);
-  }
-}
-
-/**
- * The value to seed a config key with when it first appears in the tab.
- *
- * Everything takes its DEFAULT_CONFIG default except `webapp_url`: before this
- * tab existed a pinned URL lived in Script Properties, so carry that across
- * instead of silently dropping it. Script Properties do NOT travel with a Sheet
- * copy but cells do, which is exactly why `resetForFork` exists.
- */
-function seedConfigValue_(index) {
-  var key = DEFAULT_CONFIG[index][0];
-  var def = DEFAULT_CONFIG[index][1];
-  if (key === 'webapp_url' && !def) {
-    var legacy = PropertiesService.getScriptProperties().getProperty('WEBAPP_URL');
-    if (legacy && legacy.trim()) return legacy.trim();
-  }
-  return def;
-}
-
-/**
- * Reads the config tab into a plain object, filling in defaults for anything
- * missing.
- *
- * This never throws, which breaks the rule everywhere else in this file. Other
- * server functions let exceptions reach the client's failure handler, which
- * swaps the whole UI for the error screen — right for card data, wrong for a
- * speech setting. A typo in a config cell must not take the app down.
- */
-function readConfig_() {
-  var cfg = {};
-  for (var i = 0; i < DEFAULT_CONFIG.length; i++) cfg[DEFAULT_CONFIG[i][0]] = DEFAULT_CONFIG[i][1];
-  try {
-    var sheet = getConfigSheet_();
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return cfg;
-    var values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-    for (var r = 0; r < values.length; r++) {
-      var key = String(values[r][0]).trim();
-      if (key) cfg[key] = String(values[r][1]).trim();
-    }
-  } catch (err) {
-    // Defaults are already in place — a broken config tab must not break the app.
-  }
-  return cfg;
-}
-
-// Config keys the app UI may write. `webapp_url` is deliberately excluded — it
-// is deploy/fork plumbing, and letting the in-app Settings screen change it would
-// be a footgun (point your own app at nowhere). It stays Sheet-only.
-var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak',
-  'sentence_gap', 'sentence_repeat', 'update_check'];
-
-/**
- * Writes one setting from the app's Settings screen. Whitelisted so the client
- * can only touch known preference keys, never arbitrary cells.
- * @return {Object} { key, value } as written.
- */
-function setConfig(key, value) {
-  if (CLIENT_CONFIG_KEYS.indexOf(key) === -1) {
-    throw new Error('Not a settable config key: ' + key);
-  }
-  var val = String(value == null ? '' : value).trim();
-  var lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
-    writeConfigValue_(key, val);
-  } finally {
-    lock.releaseLock();
-  }
-  return { key: key, value: val };
-}
-
-/** Writes one config value, appending the row if the key isn't there yet. */
-function writeConfigValue_(key, value) {
-  var sheet = getConfigSheet_();
-  var lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    for (var i = 0; i < keys.length; i++) {
-      if (String(keys[i][0]).trim() === key) {
-        sheet.getRange(i + 2, 2).setValue(value);
-        return;
-      }
-    }
-  }
-  sheet.appendRow([key, value, '']);
-}
-
-// ---- Sentences helpers -----------------------------------------------------
-// Deliberately parallel to getConfigSheet_/ensureConfigSchema_ rather than a
-// generalization of them: getSheet_ is hardcoded to `cards` and the one-off
-// maintenance scripts depend on that exact signature.
-
-function getSentencesSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(SENTENCE_SHEET_NAME);
-  // Insert at the end so `cards` stays the tab you land on.
-  if (!sheet) sheet = ss.insertSheet(SENTENCE_SHEET_NAME, ss.getNumSheets());
-  ensureSentenceSchema_(sheet);
-  return sheet;
-}
-
-/**
- * Self-heals the sentences tab the way ensureSchema_ does for `cards`: writes
- * the header row when the tab is empty and fills any header cell left blank
- * later, so the tab appears on its own and a future column needs no migration.
- * Only fills EMPTY cells — a wrong label is checkSheetHealth's job to report,
- * not this function's to silently overwrite.
- */
-function ensureSentenceSchema_(sheet) {
-  var need = SENTENCE_HEADERS.length;
-  if (sheet.getMaxColumns() < need) {
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), need - sheet.getMaxColumns());
-  }
-  if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, need).setValues([SENTENCE_HEADERS]);
-    sheet.setFrozenRows(1);
-    // At the default 100px you cannot read the sentence in the cell you type
-    // it into, which is the one thing this tab exists for.
-    sheet.setColumnWidth(SENTENCE_HEADERS.indexOf('text') + 1, 420);
-    sheet.setColumnWidth(SENTENCE_HEADERS.indexOf('note') + 1, 300);
-    return;
-  }
-  var header = sheet.getRange(1, 1, 1, need).getValues()[0];
-  var changed = false;
-  for (var i = 0; i < need; i++) {
-    if (header[i] === '' || header[i] === null) { header[i] = SENTENCE_HEADERS[i]; changed = true; }
-  }
-  if (changed) sheet.getRange(1, 1, 1, need).setValues([header]);
-}
-
-/** Reads all sentences as objects, tagging each with its 1-based sheet row. */
-function readSentences_() {
-  var sheet = getSentencesSheet_();
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { sheet: sheet, items: [] };
-
-  var values = sheet.getRange(2, 1, lastRow - 1, SENTENCE_HEADERS.length).getValues();
-  var items = [];
-  for (var i = 0; i < values.length; i++) {
-    var row = values[i];
-    if (row.every(function (c) { return c === '' || c === null; })) continue; // skip blank rows
-    var item = {};
-    for (var c = 0; c < SENTENCE_HEADERS.length; c++) item[SENTENCE_HEADERS[c]] = row[c];
-    item._row = i + 2; // actual sheet row number
-    items.push(item);
-  }
-  return { sheet: sheet, items: items };
-}
-
-/**
- * The sentences the player will actually speak — the single source of truth
- * behind both getSentences and getSession's `sentenceCount`, so the number on
- * the button and the list you get can never disagree. Pure: reads nothing,
- * writes nothing.
- *
- * A row with a `note` but no `text` is skipped rather than played as silence:
- * that is a half-typed row, not a sentence.
- */
-function playableSentences_(items) {
-  var out = [];
-  for (var i = 0; i < items.length; i++) {
-    if (String(items[i].exclude || '').trim() !== '') continue; // dropped by hand
-    if (String(items[i].text || '').trim() === '') continue;    // nothing to say
-    out.push(items[i]);
-  }
-  return out;
-}
-
-function toClientSentence_(s) {
-  return {
-    row: s._row,
-    id: s.id,
-    text: s.text,
-    note: s.note,
-    tag: String(s.tag || '').trim()
-  };
-}
-
-/** Reads all cards as objects, tagging each with its 1-based sheet row. */
-function readCards_() {
-  var sheet = getSheet_();
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { sheet: sheet, cards: [] };
-
-  var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
-  var cards = [];
-  for (var i = 0; i < values.length; i++) {
-    var row = values[i];
-    if (row.every(function (c) { return c === '' || c === null; })) continue; // skip blank rows
-    var card = {};
-    for (var c = 0; c < HEADERS.length; c++) card[HEADERS[c]] = row[c];
-    card._row = i + 2; // actual sheet row number
-    cards.push(card);
-  }
-  return { sheet: sheet, cards: cards };
-}
-
-function todayStr_() {
-  var tz = Session.getScriptTimeZone() || 'Europe/Amsterdam';
-  return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-}
-
-function addDaysStr_(days) {
-  var tz = Session.getScriptTimeZone() || 'Europe/Amsterdam';
-  var d = new Date();
-  d.setDate(d.getDate() + days);
-  return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
-}
-
-/** Normalizes whatever the sheet holds (Date or string) into 'yyyy-MM-dd'. */
-function normDate_(v) {
-  if (v === '' || v === null || v === undefined) return '';
-  if (Object.prototype.toString.call(v) === '[object Date]') {
-    var tz = Session.getScriptTimeZone() || 'Europe/Amsterdam';
-    return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
-  }
-  return String(v).slice(0, 10);
-}
-
-function isNew_(card) {
-  return card.box === '' || card.box === null || card.box === undefined;
-}
-
-// ---- Public API (called from the client via google.script.run) -------------
-
-/**
- * Anonymous id for the update-check ping: SHA-256 of the spreadsheet id,
- * truncated. One id per copy of the Sheet — stable across browsers and
- * devices, unlike anything stored client-side. The hash is one-way (sheet
- * ids are ~44 chars of entropy, nothing to brute-force against), so the
- * collector can count installs without learning which spreadsheets they are.
- */
-function installId_() {
-  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
-    SpreadsheetApp.getActiveSpreadsheet().getId());
-  var hex = '';
-  for (var i = 0; i < 16; i++) hex += ('0' + (raw[i] & 0xFF).toString(16)).slice(-2);
-  return hex;
-}
-
-/** Returns the cards due today + a batch of new cards, plus summary counts. */
-function getSession() {
-  var data = readCards_();
-  var cards = data.cards;
-  var today = todayStr_();
-  var config = readConfig_();
-
-  var due = [];
-  var newCards = [];
-  var boxCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  var flaggedCount = 0;
-  var excludedCount = 0;
-
-  for (var i = 0; i < cards.length; i++) {
-    var card = cards[i];
-    if (String(card.exclude || '').trim() !== '') { excludedCount++; continue; } // dropped from practice
-    if (String(card.flag || '').trim() !== '') flaggedCount++;
-    if (isNew_(card)) {
-      newCards.push(card);
-      continue;
-    }
-    var box = Number(card.box);
-    if (boxCounts[box] !== undefined) boxCounts[box]++;
-    var dueDate = normDate_(card.due);
-    if (!dueDate || dueDate <= today) due.push(card);
+  if (sheet.getMaxColumns() < HEADERS.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), HEADERS.length - sheet.getMaxColumns());
   }
 
-  shuffle_(due);
-  // New-card selection order (config `new_card_order`): "recent" introduces the
-  // most recently added cards first (by the `added` date); anything else keeps
-  // the default random pick. Shuffle first either way so that in "recent" mode
-  // cards added on the same day still vary between sessions (stable sort keeps
-  // the shuffled order within an equal `added` date).
-  shuffle_(newCards);
-  if (String(config.new_card_order || '').toLowerCase() === 'recent') {
-    newCards.sort(function (a, b) {
-      var da = normDate_(a.added), db = normDate_(b.added);
-      if (da === db) return 0;
-      return da < db ? 1 : -1; // newer date first; blank `added` sorts last
-    });
-  }
-  var newBatch = newCards.slice(0, NEW_PER_SESSION);
+  var row = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  var completelyBlank = row.every(function (value) { return value === '' || value === null; });
 
-  // True size of the weak-cards drill pool (same source of truth the drill
-  // uses), so the button label matches what "Practice weak cards" serves.
-  // Falls back to the box-based pool only when nothing has been missed yet.
-  var weakRanked = computeWeakRanking_(cards);
-  var weakCount = weakRanked.length || getWeakCardsByBox_(cards, cards.length).cards.length;
-
-  // Size of today's-mistakes drill, from the same helper the drill uses.
-  var errorCount = todaysErrors_(cards, today).length;
-
-  // The 🎧 Soak list, counted with the same helper the player filters by.
-  //
-  // Wrapped for exactly the reason readConfig_ is: a getSession error blanks the
-  // whole UI through the client's failure handler, and a side feature must never
-  // be able to do that. A renamed or broken sentences tab costs you the Soak
-  // button, not your deck.
-  var sentenceCount = 0;
-  var sentencesUrl = '';
-  try {
-    var sentences = readSentences_();
-    sentenceCount = playableSentences_(sentences.items).length;
-    // Deep-linked to the tab by gid, like cardsUrl: the "add sentences" modal
-    // has to land you on the tab you are meant to type into.
-    sentencesUrl = SpreadsheetApp.getActiveSpreadsheet().getUrl() +
-      '#gid=' + sentences.sheet.getSheetId();
-  } catch (err) {
-    // Count stays 0 and the URL blank — the client falls back to sheetUrl.
-  }
-
-  // Payload the client needs — strip nothing, but shape it explicitly.
-  var queue = due.concat(newBatch).map(toClientCard_);
-
-  return {
-    today: today,
-    dueCount: due.length,
-    newCount: newCards.length,
-    newInSession: newBatch.length,
-    totalCards: cards.length,
-    activeCards: cards.length - excludedCount,
-    boxCounts: boxCounts,
-    weakCount: weakCount,
-    errorCount: errorCount,
-    sentenceCount: sentenceCount,
-    flaggedCount: flaggedCount,
-    excludedCount: excludedCount,
-    sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
-    // Same spreadsheet, but deep-linked to the `cards` tab via its gid. Used for
-    // the "open the Sheet" links — landing on `cards` matters for import, where
-    // "Append to current sheet" targets whatever tab happens to be active.
-    cardsUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() + '#gid=' + data.sheet.getSheetId(),
-    sentencesUrl: sentencesUrl,
-    version: APP_VERSION,
-    installId: installId_(),
-    // Settings from the `config` tab. The client caches this for the page's
-    // lifetime, which is why getWeakCards() doesn't need to return it too.
-    config: config,
-    queue: queue
-  };
-}
-
-function toClientCard_(card) {
-  return {
-    row: card._row,
-    id: card.id,
-    type: card.type,
-    front_side: card.front_side,
-    back_side: card.back_side,
-    notes: card.notes,
-    flag: String(card.flag || '').trim(),
-    box: isNew_(card) ? null : Number(card.box),
-    isNew: isNew_(card)
-  };
-}
-
-/**
- * Ranks weak cards by how much they need review — the single source of truth
- * behind the practice drill (getWeakCards). Pure computation over the given
- * cards: reads nothing, writes nothing.
- *
- * A card is "weak" if it has been missed at least once (`wrong > 0`). Never-
- * missed cards — brand-new, or answered only correctly — are dropped. Excluded
- * cards, and mastered cards in box 5, are skipped. Two tiers, most-urgent first:
- *   Tier 1: wrong but never yet right (`right == 0`) — you don't know it at all.
- *   Tier 2: mixed signal (`right > 0` and `wrong > 0`) — not yet stable.
- * Within each tier, the most recently missed cards come first (by `last_wrong`
- * date), so cards you got wrong in your latest session surface at the top; ties
- * in tier 2 break toward the more balanced (higher `min(right,wrong)`) card.
- *
- * Attaches transient `_tier`/`_score`/`_lastWrong` fields used only for the
- * sort; toClientCard_ ignores them (it whitelists fields).
- * @param {Array<Object>} cards Rows from readCards_().cards.
- * @return {Array<Object>} Ranked card objects, most-urgent first.
- */
-function computeWeakRanking_(cards) {
-  var ranked = [];
-  for (var i = 0; i < cards.length; i++) {
-    var card = cards[i];
-    if (String(card.exclude || '').trim() !== '') continue; // dropped from practice
-    if (Number(card.box) === 5) continue; // box 5 = mastered; no longer "weak"
-    var right = Number(card.right) || 0;
-    var wrong = Number(card.wrong) || 0;
-    if (wrong === 0) continue; // never missed: covers brand-new and answered-only-right
-    card._tier = right === 0 ? 1 : 2;
-    card._lastWrong = normDate_(card.last_wrong); // '' when never recorded → sorts oldest
-    card._score = Math.min(right, wrong);         // tier-2 balance; 0 for tier 1
-    ranked.push(card);
-  }
-  ranked.sort(function (a, b) {
-    if (a._tier !== b._tier) return a._tier - b._tier;          // tier 1 before tier 2
-    if (a._lastWrong !== b._lastWrong)                          // most recently missed first
-      return a._lastWrong < b._lastWrong ? 1 : -1;
-    return b._score - a._score;                                // more balanced first (tier 2)
-  });
-  return ranked;
-}
-
-/**
- * Returns weak cards for a schedule-neutral practice drill. The client grades
- * these purely to advance the queue — no write happens, so box/due/right/wrong
- * are never touched.
- *
- * Because the drill never writes, computeWeakRanking_ would return the identical
- * top slice every run — the same cards forever. Instead we take the full ranked
- * pool and draw `cap` cards by weighted random sampling (sampleByUrgency_): the
- * most urgent cards come up far more often, but every weak card can appear, so
- * drills vary between runs and you eventually cover the whole pool. This does
- * NOT touch computeWeakRanking_ itself, so getSession (real practice) and the
- * weak-count button are unaffected.
- *
- * Falls back to the lowest-Leitner-box drill only when the tier ranking is
- * empty — e.g. a freshly-forked deck with no right/wrong history yet — so such
- * a Sheet still gets a useful "weak cards" practice.
- * @param {number} [limit] Max cards to return (defaults to PRACTICE_LIMIT).
- * @return {Object} { cards: [clientCard, ...] }.
- */
-function getWeakCards(limit) {
-  var cap = limit || PRACTICE_LIMIT;
-  var cards = readCards_().cards;
-  var ranked = computeWeakRanking_(cards);
-  if (ranked.length === 0) return getWeakCardsByBox_(cards, cap);
-  return { cards: sampleByUrgency_(ranked, cap).map(toClientCard_) };
-}
-
-/**
- * Weighted random sampling without replacement from an urgency-ranked list.
- * A card's weight decays exponentially with its rank (weight = e^(-rank/tau)),
- * so the most urgent cards are much likelier to be drawn while the long tail
- * still has a real chance — the drill favors what needs review but varies run
- * to run instead of always serving the same top slice. Result order follows the
- * draw (urgent-leaning first), which is fine for a drill.
- *
- * The weight of each card is fixed to its ORIGINAL rank and carried alongside
- * the pool as entries are removed, so removals don't reshuffle urgency.
- * @param {Array<Object>} ranked Cards most-urgent-first (from computeWeakRanking_).
- * @param {number} n How many to draw.
- * @return {Array<Object>} Up to n distinct cards.
- */
-function sampleByUrgency_(ranked, n) {
-  var pool = ranked.slice();                       // don't mutate the caller's array
-  var tau = Math.max(n, ranked.length / 4);        // decay scale: how fast urgency falls off
-  var weights = [];
-  for (var i = 0; i < pool.length; i++) weights.push(Math.exp(-i / tau));
-  var out = [];
-  var draws = Math.min(n, pool.length);
-  for (var d = 0; d < draws; d++) {
-    var total = 0;
-    for (var w = 0; w < weights.length; w++) total += weights[w];
-    var r = Math.random() * total;
-    var idx = 0;
-    for (; idx < weights.length - 1; idx++) { r -= weights[idx]; if (r <= 0) break; }
-    out.push(pool[idx]);
-    pool.splice(idx, 1);
-    weights.splice(idx, 1);
-  }
-  return out;
-}
-
-/**
- * Fallback weak-cards drill: already-started cards, lowest Leitner box first.
- * Used only when no card has a right/wrong history for computeWeakRanking_ to
- * rank (a brand-new deck). Excluded and brand-new cards are skipped.
- * @param {Array<Object>} cards Rows from readCards_().cards.
- * @param {number} cap Max cards to return.
- * @return {Object} { cards: [clientCard, ...] }.
- */
-function getWeakCardsByBox_(cards, cap) {
-  var eligible = [];
-  for (var k = 0; k < cards.length; k++) {
-    var c = cards[k];
-    if (String(c.exclude || '').trim() !== '') continue; // dropped from practice
-    if (isNew_(c)) continue;                              // never-studied, no box yet
-    if (Number(c.box) === 5) continue;                   // box 5 = mastered
-    eligible.push(c);
-  }
-  // Shuffle first, then a stable sort by box gives variety within each box.
-  shuffle_(eligible);
-  eligible.sort(function (a, b) { return Number(a.box) - Number(b.box); });
-  return { cards: eligible.slice(0, cap).map(toClientCard_) };
-}
-
-/**
- * Cards missed in today's study session — the short-horizon counterpart to the
- * weak drill. `last_wrong` is stamped only by gradeCard, and drills never write,
- * so this is exactly "what I got wrong in a real session today".
- *
- * Shuffled so that re-running it ("Keep going") varies the order. Like the weak
- * drill it is playback-only: nothing is written, so a card you re-drill
- * correctly stays on today's list until the date rolls over. That is deliberate
- * — this reviews the day's misses, it does not re-grade them.
- * @param {number} [limit] Max cards to return (defaults to ERROR_DRILL_LIMIT).
- * @return {Object} { cards: [clientCard, ...] } shuffled.
- */
-function getErrorCards(limit) {
-  var cap = limit || ERROR_DRILL_LIMIT;
-  var errs = todaysErrors_(readCards_().cards, todayStr_());
-  shuffle_(errs);
-  return { cards: errs.slice(0, cap).map(toClientCard_) };
-}
-
-/**
- * The cards whose most recent miss is `today` — source of truth for both the
- * drill (getErrorCards) and the home-screen count (getSession.errorCount).
- * Pure: reads nothing, writes nothing.
- *
- * Deliberately simpler than computeWeakRanking_: no box-5 skip and no
- * `wrong > 0` test, because a wrong answer always resets the box to 1 and a
- * stamped `last_wrong` already implies `wrong >= 1` — both filters would be
- * dead code here.
- * @param {Array<Object>} cards Rows from readCards_().cards.
- * @param {string} today 'yyyy-MM-dd', from todayStr_().
- * @return {Array<Object>} The matching card objects, in sheet order.
- */
-function todaysErrors_(cards, today) {
-  var out = [];
-  for (var i = 0; i < cards.length; i++) {
-    var card = cards[i];
-    if (String(card.exclude || '').trim() !== '') continue; // dropped from practice
-    if (normDate_(card.last_wrong) !== today) continue;
-    out.push(card);
-  }
-  return out;
-}
-
-/**
- * The sentences for the 🎧 Soak player, in sheet order.
- *
- * Deliberately NOT shuffled here, unlike the two drills: the player's shuffle
- * toggle reorders the list it already holds, so doing it server-side would cost
- * a round trip and throw away the original order the toggle flips back to.
- *
- * Playback-only — nothing is written, so a sentence can be heard any number of
- * times without touching a cell.
- * @param {number} [limit] Max sentences to return (defaults to SENTENCE_LIMIT).
- * @return {Object} { sentences: [clientSentence, ...], total } — `total` is the
- *   full playable count, so the client can say so when the cap truncated it.
- */
-function getSentences(limit) {
-  var cap = limit || SENTENCE_LIMIT;
-  var items = playableSentences_(readSentences_().items);
-  return { sentences: items.slice(0, cap).map(toClientSentence_), total: items.length };
-}
-
-/**
- * Grades one card and writes the new state back immediately.
- * @param {number} row      1-based sheet row of the card.
- * @param {boolean} correct Whether the user got it right.
- * @return {Object} The updated box/due for optimistic UI confirmation.
- */
-function gradeCard(row, correct) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
-    var sheet = getSheet_();
-    var range = sheet.getRange(row, 1, 1, HEADERS.length);
-    var values = range.getValues()[0];
-    var card = {};
-    for (var c = 0; c < HEADERS.length; c++) card[HEADERS[c]] = values[c];
-
-    var wasNew = isNew_(card);
-    var oldBox = wasNew ? 0 : Number(card.box);
-    var newBox;
-
-    if (wasNew) {
-      // First encounter: "correct" == already knew it, "wrong" == didn't know.
-      newBox = correct ? KNOWN_START_BOX : 1;
-    } else if (correct) {
-      newBox = Math.min(oldBox + 1, MAX_BOX);
-    } else {
-      newBox = 1;
-    }
-
-    var interval = BOX_INTERVALS[newBox] || 1;
-
-    card.box = newBox;
-    card.due = addDaysStr_(interval);
-    card.last_seen = todayStr_();
-    card.right = (Number(card.right) || 0) + (correct ? 1 : 0);
-    card.wrong = (Number(card.wrong) || 0) + (correct ? 0 : 1);
-    // Stamp the date of the most recent miss so the weak-cards drill can
-    // surface recently-missed cards first. Left untouched on correct answers.
-    if (!correct) card.last_wrong = todayStr_();
-
-    var out = [];
-    for (var h = 0; h < HEADERS.length; h++) out.push(card[HEADERS[h]]);
-    range.setValues([out]);
-
-    return { row: row, box: newBox, due: card.due };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * Edits one card's content and/or flag, writing straight back to the sheet.
- * Only whitelisted fields (front_side, back_side, notes, flag) are touched;
- * proficiency columns are never changed here.
- * @param {number} row     1-based sheet row of the card.
- * @param {Object} fields  Any subset of {front_side, back_side, notes, flag}.
- * @return {Object} { row, updated } echoing what was written.
- */
-function updateCard(row, fields) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
-    var sheet = getSheet_();
-    var updated = {};
-    for (var i = 0; i < EDITABLE_FIELDS.length; i++) {
-      var key = EDITABLE_FIELDS[i];
-      if (fields && Object.prototype.hasOwnProperty.call(fields, key)) {
-        var col = HEADERS.indexOf(key) + 1; // 1-based column
-        var val = fields[key] == null ? '' : String(fields[key]);
-        sheet.getRange(row, col).setValue(val);
-        updated[key] = val;
-      }
-    }
-    return { row: row, updated: updated };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/** Toggles the flag marker on a card. Returns the new flag value. */
-function toggleFlag(row, flagged) {
-  return updateCard(row, { flag: flagged ? FLAG_MARK : '' });
-}
-
-// ---- Utilities -------------------------------------------------------------
-
-function shuffle_(arr) {
-  for (var i = arr.length - 1; i > 0; i--) {
-    var j = Math.floor(Math.random() * (i + 1));
-    var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
-  }
-  return arr;
-}
-
-/**
- * Makes a freshly-copied Sheet genuinely the copier's own. Run once, by hand
- * from the Apps Script editor (Extensions → Apps Script → select resetForFork →
- * Run), after copying a template. No longer surfaced in the 🎴 menu — copiers
- * are guided to edit the Sheet directly (see README) — but kept as a shortcut.
- *
- * Copying a Sheet copies its cells, so a fork inherits both the original's
- * `webapp_url` (pointing "Open the app ↗" at someone else's deployment, which
- * they cannot open) and whatever study progress the template shipped with. This
- * clears both. Cards, `target_language` and the rest of the config survive.
- *
- * Idempotent — running it twice is harmless.
- */
-function resetForFork() {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
-    writeConfigValue_('webapp_url', '');
-
-    var sheet = getSheet_();
-    var lastRow = sheet.getLastRow();
-    var cleared = 0;
-    if (lastRow > 1) {
-      // One bulk read + one bulk write: per-cell writes time out on a deck of
-      // a few thousand cards.
-      var range = sheet.getRange(2, 1, lastRow - 1, HEADERS.length);
-      var values = range.getValues();
-      for (var r = 0; r < values.length; r++) {
-        var row = values[r];
-        if (row.every(function (c) { return c === '' || c === null; })) continue; // blank row
-        for (var f = 0; f < PROGRESS_FIELDS.length; f++) {
-          row[HEADERS.indexOf(PROGRESS_FIELDS[f])] = '';
-        }
-        cleared++;
-      }
-      range.setValues(values);
-    }
-    return 'This copy is now yours. Cleared the saved app URL and reset progress on ' +
-      cleared + ' card' + (cleared === 1 ? '' : 's') + '.';
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * One-time helper: sets up the header row and (optionally) demo data.
- * Run manually from the Apps Script editor if you created the sheet by hand.
- */
-function setupSheet() {
-  var sheet = getSheet_();
-  var header = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
-  if (header.join('') === '') {
+  if (completelyBlank) {
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
     sheet.setFrozenRows(1);
+    return;
   }
-  return 'Sheet ready. Header: ' + HEADERS.join(', ');
+
+  var changed = false;
+  for (var i = 0; i < HEADERS.length; i++) {
+    if (row[i] === '' || row[i] === null) {
+      row[i] = HEADERS[i];
+      changed = true;
+    }
+  }
+  if (changed) sheet.getRange(1, 1, 1, HEADERS.length).setValues([row]);
+}
+
+function readCards_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  var rows = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+  var cards = [];
+
+  for (var r = 0; r < rows.length; r++) {
+    var values = rows[r];
+    var card = { _row: r + 2 };
+    var hasData = false;
+
+    for (var c = 0; c < HEADERS.length; c++) {
+      var key = HEADERS[c];
+      var value = values[c];
+      if (value !== '' && value !== null) hasData = true;
+      card[key] = serializeCell_(key, value);
+    }
+
+    if (hasData) cards.push(card);
+  }
+
+  return cards;
+}
+
+function serializeCell_(key, value) {
+  if (value instanceof Date) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (key === 'right' || key === 'wrong' || key === 'box') {
+    if (value === '' || value === null) return '';
+    return Number(value) || 0;
+  }
+  return value == null ? '' : String(value);
+}
+
+// -----------------------------------------------------------------------------
+// 日付・ユーティリティ
+// -----------------------------------------------------------------------------
+
+function today_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+function normalizeDate_(value) {
+  if (!value) return '';
+  if (value instanceof Date) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var text = String(value).trim();
+  var match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!match) return text;
+  return match[1] + '-' + ('0' + match[2]).slice(-2) + '-' + ('0' + match[3]).slice(-2);
+}
+
+function addDays_(iso, days) {
+  var parts = iso.split('-').map(Number);
+  var date = new Date(parts[0], parts[1] - 1, parts[2]);
+  date.setDate(date.getDate() + Number(days || 0));
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+function isDue_(due, today) {
+  var normalized = normalizeDate_(due);
+  return !normalized || normalized <= today;
+}
+
+function shuffle_(array) {
+  for (var i = array.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = array[i];
+    array[i] = array[j];
+    array[j] = tmp;
+  }
+  return array;
+}
+
+function clampLimit_(value, fallback) {
+  var n = Number(value);
+  if (!isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), fallback);
+}
+
+function validateRow_(value) {
+  var row = Number(value);
+  if (!isFinite(row) || row < 2 || Math.floor(row) !== row) {
+    throw new Error('不正なカード行です。');
+  }
+  return row;
+}
+
+function columnName_(number) {
+  var result = '';
+  var n = number;
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
+function escapeHtmlAttribute_(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
