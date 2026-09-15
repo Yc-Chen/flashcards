@@ -1,8 +1,10 @@
 # Local Apps Script project configs — contain script/container IDs.
 # .clasp.json      -> the private app (plain `clasp push`)
 # .clasp.public.json -> the public forkable template (`./push-public.sh`)
+# .clasp.flashcards2.json -> the second private app (`./push-flashcards2.sh`)
 .clasp.json
 .clasp.public.json
+.clasp.flashcards2.json
 
 # Internal dev notes — contain the real deployment IDs and owner email
 AGENT.md

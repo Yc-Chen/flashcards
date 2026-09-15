@@ -16,6 +16,9 @@
       --border: #2b3240;
       /* The 🎧 Soak player's accent, the way violet marks a drill. */
       --soak: #2ec4b6;
+      /* ==highlight== wash. Translucent so it works over card and card2 alike,
+         and so the text keeps its own colour instead of <mark>'s black-on-yellow. */
+      --mark: rgba(255, 214, 102, 0.28);
       --radius: 18px;
     }
     @media (prefers-color-scheme: light) {
@@ -27,6 +30,7 @@
         --muted: #6b7280;
         --border: #e2e5ea;
         --soak: #0f9b8e;
+        --mark: rgba(255, 196, 0, 0.42);
       }
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -131,6 +135,10 @@
     .md em { font-style: italic; }
     .md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em;
       background: var(--card2); padding: 1px 6px; border-radius: 6px; }
+    /* No horizontal padding: an inline box with side padding pushes the next
+       glyph away, which in a cursive script (Arabic) reads as a broken join.
+       Vertical padding is free — it moves nothing along the baseline. */
+    .md mark { background: var(--mark); color: inherit; padding: 1px 0; border-radius: 3px; }
     .md h1, .md h2, .md h3 { margin: 0.3em 0; line-height: 1.2; }
     .md h1 { font-size: 1.4em; } .md h2 { font-size: 1.25em; } .md h3 { font-size: 1.1em; }
     .md ul, .md ol { margin: 0.35em 0; padding-left: 1.4em; text-align: left; }
@@ -1517,6 +1525,11 @@
         '<img alt="$1" src="$2">');
       s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
         '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      // Highlight before bold/italic: `==` shares no delimiter with them, but
+      // keeping it above means a highlight can wrap emphasised text, not the
+      // other way round. <mark> carries no meaning for TTS — mdText_ reads the
+      // DOM back, so the marked words are spoken exactly as unmarked ones.
+      s = s.replace(/==([^=]+)==/g, '<mark>$1</mark>');
       s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
       s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
       s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
