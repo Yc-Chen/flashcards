@@ -248,14 +248,18 @@ matters there is **“Convert text to numbers, dates, and formulas” → No**, 
 Google turns entries like `1/2` into dates.
 
 Ready-made decks live in [`decks/`](./decks): `starter-dutch.csv` (the deck the
-example Sheet ships with) and `starter-chinese.csv` (basic Mandarin vocab +
-grammar). After importing the Chinese one, set `target_language` to `zh-CN` in
-**⚙ Settings** so the right voice reads your cards.
+example Sheet ships with), `starter-chinese.csv` (basic Mandarin vocab +
+grammar), and `starter-arabic.csv` (first Modern Standard Arabic words, with
+transliteration). After importing the Chinese or Arabic one, set
+`target_language` to `zh-CN` or `ar-001` in **⚙ Settings** so the right voice
+reads your cards.
 
 ### Markdown
 `front_side`, `back_side`, and `notes` render Markdown: `**bold**`, `_italic_`,
-`` `code` ``, `# headings`, `- bullet lists`, `1.` numbered lists, `[links](https://…)`,
-and `![images](https://…)`. Put line breaks in a cell with **Alt+Enter**
+`==highlight==`, `` `code` ``, `# headings`, `- bullet lists`, `1.` numbered lists,
+`[links](https://…)`, and `![images](https://…)`. A highlight adds no horizontal
+space, so it can mark part of a word in a cursive script — `==ب==اب` colours just
+the first letter of باب without breaking the join. Put line breaks in a cell with **Alt+Enter**
 (Option+Enter on Mac) inside the Google Sheet.
 
 ## Settings (`config` tab)
