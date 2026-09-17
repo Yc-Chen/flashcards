@@ -1,0 +1,77 @@
+id,type,front_side,back_side,notes,box,due,last_seen,right,wrong,added,flag,exclude
+1,vocab,==ت==مام,"**fine; OK**
+
+_كل شيء تمام._
+tamām · Kull shayʾ tamām · Everything is fine","colloquial answer to ""how are you?""",,,,,,2026-09-15,,
+2,vocab,==ش==كراً,"**thank you**
+
+_شكراً على المساعدة._
+shukran · Shukran ʿalā l-musāʿada · Thanks for the help",more emphatic: شكراً جزيلاً shukran jazīlan,,,,,,2026-09-15,,
+3,vocab,==ب==اب,"**the door**
+
+_الباب مفتوح._
+bāb · Al-bāb maftūḥ · The door is open",plural: أبواب abwāb,,,,,,2026-09-15,,
+4,vocab,==ث==لاثة,"**three**
+
+_عندي ثلاثة كتب._
+thalātha · ʿIndī thalāthat kutub · I have three books",form used when counting masculine nouns,,,,,,2026-09-15,,
+5,vocab,==ك==ثير,"**much; many**
+
+_عندنا وقت كثير._
+kathīr · ʿIndanā waqt kathīr · We have a lot of time",,,,,,,2026-09-15,,
+6,vocab,==ج==مل,"**the camel**
+
+_الجمل يشرب الماء._
+jamal · Al-jamal yashrab al-māʾ · The camel is drinking water",plural: جمال jimāl,,,,,,2026-09-15,,
+7,vocab,==ج==بل,"**the mountain**
+
+_نسكن قرب الجبل._
+jabal · Naskun qurb al-jabal · We live near the mountain",plural: جبال jibāl,,,,,,2026-09-15,,
+8,vocab,==ر==جل,"**the man**
+
+_الرجل يقرأ جريدة._
+rajul · Ar-rajul yaqraʾ jarīda · The man is reading a newspaper",plural: رجال rijāl,,,,,,2026-09-15,,
+9,vocab,==ر==ب,"**lord; head (of a household)**
+
+_هو رب الأسرة._
+rabb · Huwa rabb al-usra · He is the head of the household","also ""Lord"" in religious use",,,,,,2026-09-15,,
+10,vocab,==ز==هرة,"**the flower**
+
+_هذه زهرة جميلة._
+zahra · Hādhihi zahra jamīla · This is a beautiful flower",plural: زهور zuhūr,,,,,,2026-09-15,,
+11,vocab,==ز==يت,"**oil (edible)**
+
+_زيت الزيتون لذيذ._
+zayt · Zayt az-zaytūn ladhīdh · Olive oil is delicious",زيتون zaytūn = olive,,,,,,2026-09-15,,
+12,vocab,==ش==ركة,"**the company**
+
+_أعمل في شركة كبيرة._
+sharika · Aʿmal fī sharika kabīra · I work at a big company",plural: شركات sharikāt,,,,,,2026-09-15,,
+13,vocab,==ف==ي,"**in**
+
+_الكتاب في الحقيبة._
+fī · Al-kitāb fī l-ḥaqība · The book is in the bag",,,,,,,2026-09-15,,
+14,vocab,==ف==ريق,"**the team**
+
+_فريقنا فاز اليوم._
+farīq · Farīqunā fāza l-yawm · Our team won today",plural: فرق firaq,,,,,,2026-09-15,,
+15,vocab,==ل==يمون,"**lemon**
+
+_أحب عصير الليمون._
+laymūn · Uḥibb ʿaṣīr al-laymūn · I like lemon juice",collective; one lemon = ليمونة laymūna,,,,,,2026-09-15,,
+16,vocab,==ل==يل,"**night**
+
+_أدرس في الليل._
+layl · Adrus fī l-layl · I study at night",one night = ليلة layla,,,,,,2026-09-15,,
+17,vocab,==ل==يلى,"**Layla (girl's name)**
+
+_اسمها ليلى._
+Laylā · Ismuhā Laylā · Her name is Layla","from ليل layl ""night""",,,,,,2026-09-15,,
+18,vocab,==م==وز,"**banana**
+
+_أشتري الموز من السوق._
+mawz · Ashtarī l-mawz min as-sūq · I buy bananas at the market",collective; one banana = موزة mawza,,,,,,2026-09-15,,
+19,vocab,==م==غرب,"**sunset; the Maghreb**
+
+_المغرب بلد جميل._
+maghrib · Al-Maghrib balad jamīl · Morocco is a beautiful country",المغرب al-Maghrib = Morocco; also the sunset prayer,,,,,,2026-09-15,,

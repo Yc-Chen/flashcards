@@ -1533,7 +1533,12 @@
       s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
       s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
       s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-      s = s.replace(/(^|[\s(])_([^_]+)_/g, '$1<em>$2</em>');
+      // The guard around `_x_` exists to protect snake_case, so it keys off word
+      // characters, NOT off a whitelist of openers: requiring a space or "(" in
+      // front silently swallowed `例：_جمل_` — italics after CJK punctuation,
+      // which is how a Chinese-annotated deck writes them. Since only _italic_
+      // spans are spoken, that failure was inaudible as well as invisible.
+      s = s.replace(/(^|[^A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '$1<em>$2</em>');
       return s;
     }
     function md(src) {

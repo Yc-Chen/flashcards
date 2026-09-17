@@ -12,7 +12,7 @@
 // it in ⚙ Settings, the Sheet menu shows it in About, and the daily update
 // check compares it against the collector's `latest_version`. Bump it here (and
 // nowhere else) when you release — see collector/README.md.
-var APP_VERSION = '1.3.0';
+var APP_VERSION = '1.3.1';
 
 var SHEET_NAME = 'cards';
 
@@ -1014,9 +1014,17 @@ function gradeCard(row, correct) {
     // surface recently-missed cards first. Left untouched on correct answers.
     if (!correct) card.last_wrong = todayStr_();
 
-    var out = [];
-    for (var h = 0; h < HEADERS.length; h++) out.push(card[HEADERS[h]]);
-    range.setValues([out]);
+    // Write ONLY the progress columns. Writing the whole row back would re-enter
+    // the content cells, and Sheets parses a written string starting with "=" as
+    // a formula — which turned every graded card whose front_side used
+    // `==highlight==` into #ERROR!. Grading has no business touching content.
+    // box…wrong are contiguous in HEADERS; last_wrong is not, so it writes alone.
+    var boxCol = HEADERS.indexOf('box') + 1;
+    sheet.getRange(row, boxCol, 1, 5)
+      .setValues([[card.box, card.due, card.last_seen, card.right, card.wrong]]);
+    if (!correct) {
+      sheet.getRange(row, HEADERS.indexOf('last_wrong') + 1).setValue(card.last_wrong);
+    }
 
     return { row: row, box: newBox, due: card.due };
   } finally {
@@ -1043,7 +1051,7 @@ function updateCard(row, fields) {
       if (fields && Object.prototype.hasOwnProperty.call(fields, key)) {
         var col = HEADERS.indexOf(key) + 1; // 1-based column
         var val = fields[key] == null ? '' : String(fields[key]);
-        sheet.getRange(row, col).setValue(val);
+        setTextValue_(sheet.getRange(row, col), val);
         updated[key] = val;
       }
     }
@@ -1051,6 +1059,23 @@ function updateCard(row, fields) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Writes one cell as literal text.
+ *
+ * `setValue` emulates typing, so a string starting with "=" (also "+", "-", "@")
+ * is parsed as a formula — a card front of `==ب==اب` lands as #ERROR!. Plain-text
+ * number format turns that parsing off; the read-back is belt and braces, falling
+ * back to Sheets' own apostrophe escape if a future runtime parses anyway. Cells
+ * that cannot start a formula take the plain path and keep their format.
+ */
+function setTextValue_(range, value) {
+  var s = value == null ? '' : String(value);
+  if (!/^[=+\-@]/.test(s)) { range.setValue(s); return; }
+  range.setNumberFormat('@');
+  range.setValue(s);
+  if (range.getValue() !== s) range.setValue("'" + s);
 }
 
 /** Toggles the flag marker on a card. Returns the new flag value. */
