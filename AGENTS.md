@@ -123,7 +123,22 @@ Not pushed but part of the product: `decks/` holds starter decks as plain CSV
 (loaded via **File → Import**, never via code).
 
 Tunables live at the top of `Code.js`: `BOX_INTERVALS`, `MAX_BOX`,
-`KNOWN_START_BOX`, `NEW_PER_SESSION`, `PRACTICE_LIMIT`, `FLAG_MARK`.
+`KNOWN_START_BOX`, `NEW_PER_SESSION`, `SESSION_MIX_SCALE`, `BOX_FRONT_LOAD`,
+`PRACTICE_LIMIT`, `FLAG_MARK`.
+
+Boxes run 1→7 (`1, 2, 4, 8, 16, 32, 64` days). Boxes 6-7 were added because a
+mature deck is ~80% top-box, which pins the daily load at deck/16. `MASTERED_BOX`
+(5) stays where box 5 used to be, so the weak-cards drill's pool is unchanged.
+`intervalFor_` scatters every due date by ±`BOX_JITTER` (15%) to break up
+same-day cohorts; `boxCounts` and the home box bar follow `MAX_BOX` rather than
+a hardcoded 5.
+
+`getSession` serves every due card; the weakness ranking (`proficiencyBox_`,
+then `accuracy_`, then oldest `due`) only sets the ORDER, via
+`sampleByUrgency_(due, due.length, SESSION_MIX_SCALE)` and `spreadByBox_`. That
+deal weights each box's progress by `box^BOX_FRONT_LOAD`, so weak boxes run
+ahead of an even spread (box 1 finishes ~79% through) while every box still
+shows up in the opening few cards.
 
 ## Sheet schema (`cards` tab) — order matters
 `id, type, front_side, back_side, notes, box, due, last_seen, right, wrong, added, flag, exclude`

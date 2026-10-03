@@ -121,6 +121,8 @@
       padding: 4px 12px;
     }
     .badge.new { color: var(--green); border-color: var(--green); }
+    .badge.peek-right { color: var(--green); border-color: var(--green); border-style: dashed; }
+    .badge.peek-wrong { color: var(--red); border-color: var(--red); border-style: dashed; }
     .front { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.2; }
     .divider { width: 40px; height: 2px; background: var(--border); border-radius: 2px; }
     .back { font-size: 22px; font-weight: 500; line-height: 1.4; }
@@ -158,17 +160,24 @@
     .btn-reveal { background: var(--accent); color: #fff; width: 100%; padding: 20px; font-size: 18px; margin-top: 16px; }
     .sublabel { display: block; font-size: 12px; font-weight: 500; opacity: 0.8; margin-top: 3px; }
 
-    /* Card tools (speak + flag + edit + exclude) in the progress row.
-       34px, not 38: five tools plus the bar have to fit a narrow phone. */
+    /* Card tools (back + speak + flag + edit + exclude) in the progress row.
+       32px, not 38: six tools plus the bar have to fit a narrow phone. */
     .tool {
       background: var(--card2); color: var(--muted); font-size: 17px;
-      flex: none; width: 34px; height: 32px; border-radius: 10px; line-height: 1;
+      flex: none; width: 32px; height: 32px; border-radius: 10px; line-height: 1;
       display: flex; align-items: center; justify-content: center; padding: 0;
     }
     .tool.flagged { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
     .tool.speaking { background: rgba(79, 140, 255, 0.18); color: var(--accent); }
     .tool.quit { font-size: 15px; }
     .tool.quit:active { background: rgba(229, 83, 60, 0.18); color: var(--red); }
+    .tool.back { font-size: 22px; }
+    .tool.back:disabled { opacity: 0.35; }
+    /* Looking back at an earlier card is read-only: hide the tools that write. */
+    #session.peeking #flag-btn,
+    #session.peeking #edit-btn,
+    #session.peeking #exclude-btn { display: none; }
+    .btn-peek { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
 
     .flagged-line { text-align: center; font-size: 13px; padding: 2px 6px; }
     .flagged-line a { color: #f59e0b; text-decoration: none; }
@@ -323,6 +332,7 @@
       <div class="mode-banner" id="mode-banner">🔁 Practice mode · grades won't change your schedule</div>
       <div class="progress">
         <button class="tool quit" id="quit-btn" title="End this session" onclick="quitSession()">✕</button>
+        <button class="tool back" id="back-btn" title="Look at the previous card" onclick="peekBack()" disabled>‹</button>
         <div class="bar"><div class="fill" id="prog-fill"></div></div>
         <div class="txt" id="prog-txt">0/0</div>
         <button class="tool" id="speak-btn" title="Speak this card aloud" onclick="speakCurrent()">🔊</button>
@@ -354,6 +364,11 @@
         <button class="btn-right" id="btn-right" onclick="grade(true)">
           <span id="right-label">Correct</span>
         </button>
+      </div>
+
+      <!-- Looking back at an earlier card (read-only, grade already given) -->
+      <div class="actions hidden" id="peek-actions">
+        <button class="btn-peek" id="peek-fwd" onclick="peekForward()">Back to card →</button>
       </div>
     </div>
 
@@ -522,6 +537,12 @@
     var queue = [];
     var idx = 0;
     var revealed = false;
+    // ‹ Back: how many cards behind the current one we're looking (0 = not
+    // looking back), the grade given to each queue[i], and whether the current
+    // card was revealed when we left it.
+    var peek = 0;
+    var gradedAs = [];
+    var resumeRevealed = false;
     var sessionStats = { right: 0, wrong: 0, total: 0 };
     var pending = 0; // outstanding grade writes
     var mode = 'study'; // 'study' = scheduled + writes; 'practice' = a drill, no writes
@@ -582,14 +603,19 @@
         fl.classList.add('hidden');
       }
 
+      // Driven by whatever boxes the server reports, so the ladder can grow
+      // (boxes 6 and 7 for mature cards) without the home screen going stale.
       var bar = document.getElementById('boxbar');
       bar.innerHTML = '';
-      for (var b = 1; b <= 5; b++) {
+      var boxes = Object.keys(data.boxCounts || {}).map(Number)
+        .filter(function (n) { return n > 0; })
+        .sort(function (x, y) { return x - y; });
+      boxes.forEach(function (b) {
         var el = document.createElement('div');
         el.className = 'b';
         el.textContent = 'Box ' + b + ': ' + (data.boxCounts[b] || 0);
         bar.appendChild(el);
-      }
+      });
 
       var startBtn = document.getElementById('start-btn');
       var toStudy = data.queue.length;
@@ -601,7 +627,7 @@
         startBtn.disabled = false;
       }
 
-      // Weak-cards drill: cards actually missed (wrong>0), Box 5 excluded.
+      // Weak-cards drill: cards actually missed (wrong>0), mastered boxes excluded.
       // weakCount comes from the server (computeWeakRanking_), so the label
       // matches exactly what the drill serves. Older payloads without the
       // field fall back to the box sum so the button still works.
@@ -719,6 +745,8 @@
       document.getElementById('session').classList.remove('practice');
       queue = sessionData.queue.slice();
       idx = 0;
+      peek = 0;
+      gradedAs = [];
       sessionStats = { right: 0, wrong: 0, total: queue.length };
       pending = 0;
       show('session');
@@ -765,6 +793,8 @@
       document.getElementById('session').classList.add('practice');
       queue = cards.slice();
       idx = 0;
+      peek = 0;
+      gradedAs = [];
       revealed = false;
       sessionStats = { right: 0, wrong: 0, total: queue.length };
       pending = 0;
@@ -777,6 +807,10 @@
       revealed = false;
       if (speechOn) speechSynthesis.cancel(); // don't let the last card talk over this one
       var c = queue[idx];
+      peek = 0;
+      document.getElementById('session').classList.remove('peeking');
+      document.getElementById('peek-actions').classList.add('hidden');
+      document.getElementById('back-btn').disabled = idx === 0;
 
       // progress
       document.getElementById('prog-txt').textContent = (idx + 1) + '/' + queue.length;
@@ -1010,9 +1044,9 @@
     }
 
     function speakCurrent() {
-      var c = queue[idx];
+      var c = queue[idx - peek];
       if (!c) return;
-      speak(speechPartsFor(c, revealed));
+      speak(speechPartsFor(c, revealed || peek > 0));
     }
 
     // ---- 🎧 Soak (the sentence player) ----
@@ -1568,15 +1602,19 @@
     }
 
     function onCardTap() {
-      if (!revealed) reveal();
+      if (!revealed && !peek) reveal();
     }
 
-    function reveal() {
+    function showAnswer_() {
       revealed = true;
       document.getElementById('answer').classList.remove('hidden');
       document.getElementById('tap-hint').classList.add('hidden');
       document.getElementById('reveal-btn').classList.add('hidden');
       document.getElementById('grade-actions').classList.remove('hidden');
+    }
+
+    function reveal() {
+      showAnswer_();
       // Speak on reveal, never on card show: hearing the word before you try to
       // recall it hands you the answer. This is also a user gesture, which is
       // what the browser's autoplay policy requires.
@@ -1584,8 +1622,9 @@
     }
 
     function grade(correct) {
-      if (!revealed) return;
+      if (!revealed || peek) return;
       var c = queue[idx];
+      gradedAs[idx] = correct;
       if (correct) sessionStats.right++; else sessionStats.wrong++;
 
       // Practice mode is schedule-neutral: grading only advances the queue, so
@@ -1605,6 +1644,54 @@
 
       idx++;
       renderCard();
+    }
+
+    // ---- ‹ Back ----
+    // On autopilot it's easy to tap past a card without really seeing it. ‹
+    // shows earlier cards of this session again, answer up, with the grade you
+    // gave. Read-only: no re-grading, flagging, editing or excluding.
+    function peekBack() {
+      if (idx - peek <= 0) return;
+      if (peek === 0) resumeRevealed = revealed;
+      peek++;
+      renderPeek_();
+    }
+
+    function peekForward() {
+      if (peek <= 0) return;
+      peek--;
+      if (peek > 0) return renderPeek_();
+      renderCard();
+      if (resumeRevealed) showAnswer_(); // no auto-speak: you've heard it
+    }
+
+    function renderPeek_() {
+      if (speechOn) speechSynthesis.cancel();
+      var i = idx - peek, c = queue[i], right = gradedAs[i];
+      document.getElementById('session').classList.add('peeking');
+      document.getElementById('prog-txt').textContent = (i + 1) + '/' + queue.length;
+      document.getElementById('back-btn').disabled = i === 0;
+
+      var badge = document.getElementById('card-badge');
+      if (right === undefined) { // 🚫 excluded, never graded
+        badge.textContent = 'Excluded';
+        badge.className = 'badge';
+      } else {
+        badge.textContent = 'You marked: ' + (c.isNew
+          ? (right ? 'Already knew' : "Didn't know")
+          : (right ? 'Correct' : 'Wrong'));
+        badge.className = 'badge ' + (right ? 'peek-right' : 'peek-wrong');
+      }
+
+      applyCardContent(c);
+      document.getElementById('answer').classList.remove('hidden');
+      document.getElementById('tap-hint').classList.add('hidden');
+      document.getElementById('reveal-btn').classList.add('hidden');
+      document.getElementById('grade-actions').classList.add('hidden');
+      document.getElementById('peek-actions').classList.remove('hidden');
+      document.getElementById('peek-fwd').textContent = peek === 1
+        ? 'Back to current card →'
+        : 'Next: card ' + (i + 2) + ' →';
     }
 
     function finishSession(quit) {

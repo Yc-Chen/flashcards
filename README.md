@@ -7,7 +7,7 @@ Sheet *is* the database, and Google Apps Script serves the app.
 
 - **Backend:** a Google Sheet (`cards` tab). Add/edit cards from anywhere.
 - **App:** a single Apps Script web app (mobile-first, add-to-home-screen friendly).
-- **Scheduling:** Leitner boxes (1→5), with immediate write-back of your progress.
+- **Scheduling:** Leitner boxes (1→7), with immediate write-back of your progress.
 - **Speech:** tap 🔊 to hear a word or example in the language you're studying —
   your browser's own voices, no API key, no cost.
 - **🎧 Soak:** keep whole sentences in a `sentences` tab and have the app read
@@ -162,8 +162,11 @@ user's own Sheet.
 
 - Home shows **Due** / **New** counts and the Leitner box breakdown, with the
   scheduled session on top and two free drills below it:
-  - **Start practice** — the scheduled Leitner session (all due cards + up to 10 new
-    ones). Grading **saves your progress** to the Sheet.
+  - **Start practice** — the scheduled Leitner session (all due cards + up to 10
+    new ones). Grading **saves your progress** to the Sheet. The order
+    front-loads your weak cards — box 1 is dealt densely early and done with
+    about three-quarters of the way in — but interleaved with steadier ones, so
+    a long session never opens on a wall of box 1.
   - **Weak cards** — a free drill of the cards you keep missing (never-right ones
     first, then the shaky ones; drawn by weighted random, so the most urgent come
     up most often but the whole pool eventually cycles through).
@@ -348,13 +351,25 @@ there's one study language per Sheet, so there is nothing extra to set up.
 
 ## Scheduling (Leitner)
 
-- Boxes **1→5**, review intervals **1, 2, 4, 8, 16 days**.
+- Boxes **1→7**, review intervals **1, 2, 4, 8, 16, 32, 64 days**. The two long
+  boxes keep a mature deck from drowning in reviews: a few hundred cards parked
+  in a 16-day box means dozens of repetitions a day forever, however well you
+  know them.
+- Each due date is scattered by up to **±15%** (`BOX_JITTER`), so a big study day
+  doesn't come back as one wall exactly one interval later — the cohort fans out
+  a little more every time it's seen.
 - **Correct** → up one box. **Wrong** → back to box 1.
-- Up to **10 new cards** per scheduled session.
+- Every due card is served, **ordered by weakness**: ranked by box ascending,
+  then accuracy, then oldest due; drawn from that ranking by weighted random
+  pick so the order varies run to run; then dealt out weak-first but
+  interleaved (`BOX_FRONT_LOAD`), so the first half of a session is mostly the
+  low boxes while the mature ones fill the tail — without long blocks of one
+  box. Up to **10 new cards** on top, as before.
 - Both drills — **Weak cards** and **Today's mistakes** — are **schedule-neutral**:
   they never change a card's box or due date. Up to **20 cards** per weak drill,
   and up to **50** for a day's mistakes (a day rarely comes near that).
-- Tune in `Code.js`: `BOX_INTERVALS`, `NEW_PER_SESSION`, `KNOWN_START_BOX`,
+- Tune in `Code.js`: `BOX_INTERVALS`, `BOX_JITTER`, `MASTERED_BOX`,
+  `NEW_PER_SESSION`, `SESSION_MIX_SCALE`, `BOX_FRONT_LOAD`, `KNOWN_START_BOX`,
   `PRACTICE_LIMIT`, `ERROR_DRILL_LIMIT`.
 
 ## Updates & the version check

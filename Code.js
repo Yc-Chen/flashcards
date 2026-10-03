@@ -16,15 +16,40 @@ var APP_VERSION = '1.3.1';
 
 var SHEET_NAME = 'cards';
 
-// Leitner boxes 1..5 and how many days until a card in each box is due again.
-var BOX_INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16 };
-var MAX_BOX = 5;
+// Leitner boxes 1..7 and how many days until a card in each box is due again.
+// Boxes 6 and 7 exist because a mature deck is mostly top-box cards: a few
+// hundred cards sitting in a 16-day box means dozens of reviews a day forever,
+// however well you know them. Doubling twice more thins that tail out while
+// leaving the shaky end of the ladder exactly as it was.
+var BOX_INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16, 6: 32, 7: 64 };
+var MAX_BOX = 7;
+
+// From this box up a card counts as mastered and is left out of the weak-cards
+// drill. Held at 5 as the ladder grew, so that drill's pool is unchanged.
+var MASTERED_BOX = 5;
+
+// Due dates are scattered by up to ±15%, so cards graded on the same day don't
+// march back in lockstep. Without it a 100-card study day returns as a 100-card
+// wall exactly one interval later; with it the wave fans out, and fans out
+// further every time those cards are seen again.
+var BOX_JITTER = 0.15;
 
 // "Already knew it" on a brand-new card jumps straight to this box.
 var KNOWN_START_BOX = 4;
 
 // How many never-studied cards to introduce per session.
 var NEW_PER_SESSION = 10;
+
+// How much flatter the scheduled session's draw is than the weak drill's. 1
+// would hand you a session that is almost entirely box 1 after a break; 2 keeps
+// shaky cards well ahead while leaving room for steadier ones to come along.
+var SESSION_MIX_SCALE = 2;
+
+// How hard a session front-loads its weak cards. The deal lets a box run ahead
+// of an even spread by box^this, so 0 deals every box evenly across the
+// session, 0.5 gets the box-1 work done by roughly three-quarters of the way
+// through, and 1 starts packing box 1 into blocks again.
+var BOX_FRONT_LOAD = 0.5;
 
 // How many weak (low-box) cards to serve in a schedule-neutral practice drill.
 var PRACTICE_LIMIT = 20;
@@ -670,6 +695,70 @@ function installId_() {
   return hex;
 }
 
+/**
+ * Deals a session's cards out so the boxes alternate instead of arriving in
+ * blocks, while still leading with the weak ones.
+ *
+ * Each box's cards are spread across the session by always taking from the box
+ * furthest behind in the deal — so a session reads 1 2 1 1 2 1 3 1 … rather
+ * than every box-1 card followed by every box-2 one. Progress is weighted by
+ * box^BOX_FRONT_LOAD, which lets weak boxes run ahead of an even spread: box 1
+ * is dealt densely early and is finished with roughly three-quarters of the way
+ * in, while the mature boxes thin out the opening and fill the tail. Every box
+ * still appears in the first few cards, because at the start all boxes sit at
+ * zero progress and the tie goes to the weakest.
+ *
+ * Ranking order is preserved inside a box, so each box leads with the cards you
+ * know least.
+ * @param {Array<Object>} cards The drawn batch.
+ * @return {Array<Object>} The same cards, interleaved by box, weak-leaning.
+ */
+function spreadByBox_(cards) {
+  var groups = {}, keys = [];
+  for (var i = 0; i < cards.length; i++) {
+    var box = proficiencyBox_(cards[i]);
+    if (!groups[box]) { groups[box] = []; keys.push(box); }
+    groups[box].push(cards[i]);
+  }
+  keys.sort(function (a, b) { return a - b; }); // ties in the deal go to the weaker box
+  var dealt = {}, out = [];
+  for (var k = 0; k < keys.length; k++) dealt[keys[k]] = 0;
+  for (var n = 0; n < cards.length; n++) {
+    var pick = null, lowest = Infinity;
+    for (var j = 0; j < keys.length; j++) {
+      var key = keys[j];
+      if (dealt[key] >= groups[key].length) continue;
+      var progress = (dealt[key] / groups[key].length) * Math.pow(key, BOX_FRONT_LOAD);
+      if (progress < lowest - 1e-9) { lowest = progress; pick = key; }
+    }
+    out.push(groups[pick][dealt[pick]++]);
+  }
+  return out;
+}
+
+/**
+ * A due card's Leitner box as a weakness rank: 1 is the shakiest. A blank or
+ * unparseable box (a hand-edited row) counts as 1 rather than sorting last —
+ * the safe reading of "we don't know how well you know this" is "badly".
+ */
+function proficiencyBox_(card) {
+  var box = Math.floor(Number(card.box));
+  if (!isFinite(box) || box < 1) return 1;
+  return Math.min(box, MAX_BOX);
+}
+
+/**
+ * Share of attempts answered right, 0..1, used to break ties inside a box.
+ * A card with no history at all counts as 1 (nothing has gone wrong yet), so a
+ * hand-seeded row can't displace one you have actually been missing.
+ */
+function accuracy_(card) {
+  var right = Number(card.right) || 0;
+  var wrong = Number(card.wrong) || 0;
+  var attempts = right + wrong;
+  return attempts > 0 ? right / attempts : 1;
+}
+
 /** Returns the cards due today + a batch of new cards, plus summary counts. */
 function getSession() {
   var data = readCards_();
@@ -679,7 +768,8 @@ function getSession() {
 
   var due = [];
   var newCards = [];
-  var boxCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  var boxCounts = {};
+  for (var bx = 1; bx <= MAX_BOX; bx++) boxCounts[bx] = 0;
   var flaggedCount = 0;
   var excludedCount = 0;
 
@@ -697,7 +787,27 @@ function getSession() {
     if (!dueDate || dueDate <= today) due.push(card);
   }
 
+  // Rank the due pile by weakness, most in need first: Leitner box ascending
+  // (box 1 = shakiest), then accuracy ascending (a card you miss half the time
+  // outranks one you almost always get), then oldest due so nothing inside one
+  // tier starves. shuffle_ ran first, so the stable sort leaves cards that tie
+  // on all three in a different order each session — the same trick
+  // `new_card_order: recent` uses below.
+  //
+  // This ranking decides the odds, not the running order: the batch is then
+  // *drawn* from it (see sampleByUrgency_ below), because a solid wall of box-1
+  // cards to open a session is demoralising.
   shuffle_(due);
+  due.sort(function (a, b) {
+    var ba = proficiencyBox_(a), bb = proficiencyBox_(b);
+    if (ba !== bb) return ba - bb;
+    var aa = accuracy_(a), ab = accuracy_(b);
+    if (aa !== ab) return aa - ab;
+    var da = normDate_(a.due) || '', db = normDate_(b.due) || ''; // blank = longest overdue
+    if (da === db) return 0;
+    return da < db ? -1 : 1;
+  });
+
   // New-card selection order (config `new_card_order`): "recent" introduces the
   // most recently added cards first (by the `added` date); anything else keeps
   // the default random pick. Shuffle first either way so that in "recent" mode
@@ -711,6 +821,13 @@ function getSession() {
       return da < db ? 1 : -1; // newer date first; blank `added` sorts last
     });
   }
+  // Every due card is served, as before — the ranking only decides the ORDER.
+  // sampleByUrgency_ (the weak drill's weighted draw, flattened by
+  // SESSION_MIX_SCALE) draws the whole pile, so the order is never the same
+  // twice; spreadByBox_ then deals them out weak-first but interleaved, so the
+  // session front-loads the cards you know least without opening on a wall of
+  // box 1. Stop early and what you skip is your steadiest material.
+  var dueBatch = spreadByBox_(sampleByUrgency_(due, due.length, SESSION_MIX_SCALE));
   var newBatch = newCards.slice(0, NEW_PER_SESSION);
 
   // True size of the weak-cards drill pool (same source of truth the drill
@@ -742,7 +859,7 @@ function getSession() {
   }
 
   // Payload the client needs — strip nothing, but shape it explicitly.
-  var queue = due.concat(newBatch).map(toClientCard_);
+  var queue = dueBatch.concat(newBatch).map(toClientCard_);
 
   return {
     today: today,
@@ -793,7 +910,7 @@ function toClientCard_(card) {
  *
  * A card is "weak" if it has been missed at least once (`wrong > 0`). Never-
  * missed cards — brand-new, or answered only correctly — are dropped. Excluded
- * cards, and mastered cards in box 5, are skipped. Two tiers, most-urgent first:
+ * cards, and mastered cards (box MASTERED_BOX and up), are skipped. Two tiers, most-urgent first:
  *   Tier 1: wrong but never yet right (`right == 0`) — you don't know it at all.
  *   Tier 2: mixed signal (`right > 0` and `wrong > 0`) — not yet stable.
  * Within each tier, the most recently missed cards come first (by `last_wrong`
@@ -810,7 +927,7 @@ function computeWeakRanking_(cards) {
   for (var i = 0; i < cards.length; i++) {
     var card = cards[i];
     if (String(card.exclude || '').trim() !== '') continue; // dropped from practice
-    if (Number(card.box) === 5) continue; // box 5 = mastered; no longer "weak"
+    if (Number(card.box) >= MASTERED_BOX) continue; // mastered; no longer "weak"
     var right = Number(card.right) || 0;
     var wrong = Number(card.wrong) || 0;
     if (wrong === 0) continue; // never missed: covers brand-new and answered-only-right
@@ -867,11 +984,13 @@ function getWeakCards(limit) {
  * the pool as entries are removed, so removals don't reshuffle urgency.
  * @param {Array<Object>} ranked Cards most-urgent-first (from computeWeakRanking_).
  * @param {number} n How many to draw.
+ * @param {number} [tauScale] Multiplies the decay scale: >1 flattens the odds,
+ *     so the tail is drawn more often. Defaults to 1 (the drill's behaviour).
  * @return {Array<Object>} Up to n distinct cards.
  */
-function sampleByUrgency_(ranked, n) {
+function sampleByUrgency_(ranked, n, tauScale) {
   var pool = ranked.slice();                       // don't mutate the caller's array
-  var tau = Math.max(n, ranked.length / 4);        // decay scale: how fast urgency falls off
+  var tau = Math.max(n, ranked.length / 4) * (tauScale || 1); // how fast urgency falls off
   var weights = [];
   for (var i = 0; i < pool.length; i++) weights.push(Math.exp(-i / tau));
   var out = [];
@@ -903,7 +1022,7 @@ function getWeakCardsByBox_(cards, cap) {
     var c = cards[k];
     if (String(c.exclude || '').trim() !== '') continue; // dropped from practice
     if (isNew_(c)) continue;                              // never-studied, no box yet
-    if (Number(c.box) === 5) continue;                   // box 5 = mastered
+    if (Number(c.box) >= MASTERED_BOX) continue;         // mastered
     eligible.push(c);
   }
   // Shuffle first, then a stable sort by box gives variety within each box.
@@ -975,6 +1094,19 @@ function getSentences(limit) {
 }
 
 /**
+ * Days until a card in this box is due again, scattered by ±BOX_JITTER so same
+ * day cohorts fan out instead of returning together. Never less than a day, so
+ * a card you just missed is still back tomorrow.
+ * @param {number} box The box the card has just landed in.
+ * @return {number} Whole days until it is due.
+ */
+function intervalFor_(box) {
+  var base = BOX_INTERVALS[box] || 1;
+  var spread = 1 + (Math.random() * 2 - 1) * BOX_JITTER;
+  return Math.max(1, Math.round(base * spread));
+}
+
+/**
  * Grades one card and writes the new state back immediately.
  * @param {number} row      1-based sheet row of the card.
  * @param {boolean} correct Whether the user got it right.
@@ -1003,7 +1135,7 @@ function gradeCard(row, correct) {
       newBox = 1;
     }
 
-    var interval = BOX_INTERVALS[newBox] || 1;
+    var interval = intervalFor_(newBox);
 
     card.box = newBox;
     card.due = addDaysStr_(interval);
