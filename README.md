@@ -162,11 +162,14 @@ user's own Sheet.
 
 - Home shows **Due** / **New** counts and the Leitner box breakdown, with the
   scheduled session on top and two free drills below it:
-  - **Start practice** — the scheduled Leitner session (all due cards + up to 10
-    new ones). Grading **saves your progress** to the Sheet. The order
-    front-loads your weak cards — box 1 is dealt densely early and done with
-    about three-quarters of the way in — but interleaved with steadier ones, so
-    a long session never opens on a wall of box 1.
+  - **Start practice** — the scheduled Leitner session. Grading **saves your
+    progress** to the Sheet. It leads with everything due in **boxes 1 and 2**
+    (the two mixed together, so it never opens on a wall of box 1), then carries
+    on up the ladder. **New cards** come after that block — at most **10 a
+    day**, and only if box 1 has fallen below **20 cards** by then; while the
+    shaky pile is that big, no more are added to it. The whole day is capped at **80 cards**
+    (`daily_limit`), counting everything you've already graded today, so a
+    backlog arrives in day-sized pieces instead of all at once.
   - **Weak cards** — a free drill of the cards you keep missing (never-right ones
     first, then the shaky ones; drawn by weighted random, so the most urgent come
     up most often but the whole pool eventually cycles through).
@@ -282,6 +285,8 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 | `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
 | `sentence_gap` | `1.5` | Seconds of silence after each sentence in **🎧 Soak**. `0` = no pause. Also in **⚙ Settings**. |
 | `sentence_repeat` | `1` | How many times **🎧 Soak** speaks each sentence before moving on. Also in **⚙ Settings**. |
+| `daily_limit` | `80` | Most cards one **day** will serve you, across however many sittings — cards you already graded today count against it. `0` = no limit. Also in **⚙ Settings**. |
+| `box1_new_gate` | `20` | New cards wait while box 1 holds this many or more. Raise it to meet new words sooner, lower it to clear the shaky pile first. `0` = never introduce new cards. Sheet-only. |
 | `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). Also in **⚙ Settings**. `yes` / `no` |
 | `webapp_url` | *(blank)* | The `/exec` link of your deployment, used by **🎴 Flashcards → Open the app ↗**. Blank = auto-detect. |
 
@@ -359,18 +364,34 @@ there's one study language per Sheet, so there is nothing extra to set up.
   doesn't come back as one wall exactly one interval later — the cohort fans out
   a little more every time it's seen.
 - **Correct** → up one box. **Wrong** → back to box 1.
-- Every due card is served, **ordered by weakness**: ranked by box ascending,
-  then accuracy, then oldest due; drawn from that ranking by weighted random
-  pick so the order varies run to run; then dealt out weak-first but
-  interleaved (`BOX_FRONT_LOAD`), so the first half of a session is mostly the
-  low boxes while the mature ones fill the tail — without long blocks of one
-  box. Up to **10 new cards** on top, as before.
+- A session runs in three stages: **boxes 1-2 first**, then **new cards** if the
+  gate below opens, then **boxes 3-7**. Each stage is ordered by weakness (box
+  ascending, then accuracy, then oldest due), drawn from that ranking by
+  weighted random pick so the order varies run to run, and dealt out interleaved
+  (`BOX_FRONT_LOAD`) — so box 1 and box 2 alternate through the opening block
+  instead of arriving in one wall, and the mature boxes do the same in the tail.
+- **New cards are gated twice.** First on the day: **10 new cards a day**
+  (`NEW_PER_DAY`), counted from the cards whose first-ever grade was today, so
+  coming back for a second or third sitting doesn't start the allowance over.
+  Then on the weak pile (`box1_new_gate`, default 20): when the box-1/box-2
+  block is done, the app recounts box 1 from the grades you just gave — a box-1
+  card answered right has left box 1, a box-2 card missed has just joined it —
+  and plays the new cards only if that count is under the gate. Clear your weak
+  cards and you earn new ones; keep missing them and you aren't handed more.
+  The threshold is a config row, so you can move it without touching the code.
+- **At most 80 cards a day** (`daily_limit`, `DAILY_LIMIT`), not per session:
+  whatever you graded earlier today is already spent, so two sittings share one
+  budget. When it's used up the home screen says so; the two drills and
+  **🎧 Soak** stay open, because they never write to your schedule. Set
+  `daily_limit` to `0` for no limit.
 - Both drills — **Weak cards** and **Today's mistakes** — are **schedule-neutral**:
   they never change a card's box or due date. Up to **20 cards** per weak drill,
   and up to **50** for a day's mistakes (a day rarely comes near that).
 - Tune in `Code.js`: `BOX_INTERVALS`, `BOX_JITTER`, `MASTERED_BOX`,
-  `NEW_PER_SESSION`, `SESSION_MIX_SCALE`, `BOX_FRONT_LOAD`, `KNOWN_START_BOX`,
-  `PRACTICE_LIMIT`, `ERROR_DRILL_LIMIT`.
+  `NEW_PER_DAY`, `PRIORITY_BOX`, `SESSION_MIX_SCALE`, `BOX_FRONT_LOAD`,
+  `KNOWN_START_BOX`, `PRACTICE_LIMIT`, `ERROR_DRILL_LIMIT`. `BOX1_NEW_GATE` and
+  `DAILY_LIMIT` are only the fallbacks for the `box1_new_gate` and `daily_limit`
+  config rows — change those in the Sheet instead.
 
 ## Updates & the version check
 

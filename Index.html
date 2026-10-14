@@ -181,6 +181,7 @@
 
     .flagged-line { text-align: center; font-size: 13px; padding: 2px 6px; }
     .flagged-line a { color: #f59e0b; text-decoration: none; }
+    .daily-line { color: var(--muted); }
 
     /* Practice-mode cue (schedule-neutral drill) */
     .mode-banner {
@@ -315,6 +316,7 @@
       </div>
       <div class="boxbar" id="boxbar"></div>
       <button class="btn-primary" id="start-btn" onclick="startSession()">Start practice</button>
+      <div id="daily-line" class="flagged-line daily-line hidden"></div>
       <div class="drill-row">
         <button class="btn-ghost hidden" id="errors-btn" onclick="startErrorDrill()">Today’s mistakes</button>
         <button class="btn-ghost" id="practice-btn" onclick="startPractice()">Weak cards</button>
@@ -442,6 +444,24 @@
       </div>
 
       <div class="section">
+        <label for="set-daily">Most cards in a day</label>
+        <select id="set-daily">
+          <option value="0">No limit</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="40">40</option>
+          <option value="60">60</option>
+          <option value="80">80</option>
+          <option value="120">120</option>
+        </select>
+        <p class="note">
+          Counts every card you grade in a day, across however many sittings.
+          Boxes 1 and 2 are always served first, so what a limit leaves for
+          tomorrow is your steadiest material.
+        </p>
+      </div>
+
+      <div class="section">
         <label for="set-gap">Pause after each sentence <span class="hint">🎧 Soak</span></label>
         <select id="set-gap">
           <option value="0.5">Short — 0.5 seconds</option>
@@ -543,6 +563,9 @@
     var peek = 0;
     var gradedAs = [];
     var resumeRevealed = false;
+    // New-card gate: the box-1/box-2 block sits at the head of the queue and the
+    // session's new cards wait behind it until it's done — see resolveGate_.
+    var gate = null;
     var sessionStats = { right: 0, wrong: 0, total: 0 };
     var pending = 0; // outstanding grade writes
     var mode = 'study'; // 'study' = scheduled + writes; 'practice' = a drill, no writes
@@ -617,10 +640,51 @@
         bar.appendChild(el);
       });
 
+      // What this sitting is likely to serve: the queue, plus the held-back new
+      // cards when box 1 is currently under the gate. The session decides for
+      // real once the box-1/box-2 block is graded (resolveGate_), so this is a
+      // prediction from the latest count — which is also what the line below
+      // explains when the gate is shut.
+      var held = (data.newHeld || []).length;
+      var gateOpen = (typeof data.box1Count === 'number' && typeof data.newGate === 'number')
+        ? data.box1Count < data.newGate
+        : true;
+      var toStudy = data.queue.length + (gateOpen ? held : 0);
+      if (typeof data.dailyLeft === 'number') toStudy = Math.min(toStudy, data.dailyLeft);
+
+      // The day is used up: the button says so on its own, so the line below
+      // stays out of the way rather than repeating it.
+      var spent = data.dailyLimit > 0 && data.dailyLeft === 0 &&
+        (data.dueCount > 0 || data.newCount > 0);
+
+      // Today's budget in plain numbers, plus the one thing that is otherwise
+      // unexplainable: a session that hands you no new cards. Each line is
+      // guarded on the field being there, so an older payload shows nothing.
+      var bits = [];
+      if (!spent && typeof data.dailyLeft === 'number' && data.dailyLimit > 0) {
+        if (data.seenToday > 0) {
+          bits.push(data.seenToday + ' graded today · ' + data.dailyLeft + ' left of ' + data.dailyLimit);
+        } else if (data.dailyLeft < data.dueCount) {
+          bits.push(data.dueCount + ' due · ' + data.dailyLeft + ' today');
+        }
+      }
+      // Two things can hold new cards back; say which one it is. The day's
+      // allowance wins the wording when both apply — it's the one that won't
+      // change however well this sitting goes.
+      if (!spent && typeof data.newToday === 'number' && data.newToday >= data.newPerDay) {
+        bits.push(data.newToday + ' new cards already today');
+      } else if (!spent && typeof data.box1Count === 'number' && data.box1Count >= data.newGate) {
+        bits.push('new cards wait until box 1 is under ' + data.newGate);
+      }
+      var dl = document.getElementById('daily-line');
+      dl.textContent = bits.join(' · ');
+      dl.classList.toggle('hidden', bits.length === 0);
+
       var startBtn = document.getElementById('start-btn');
-      var toStudy = data.queue.length;
       if (toStudy === 0) {
-        startBtn.textContent = 'Nothing due — all caught up!';
+        startBtn.textContent = spent
+          ? data.dailyLimit + ' done today — back tomorrow'
+          : 'Nothing due — all caught up!';
         startBtn.disabled = true;
       } else {
         startBtn.textContent = 'Start practice (' + toStudy + ')';
@@ -747,6 +811,17 @@
       idx = 0;
       peek = 0;
       gradedAs = [];
+      // The new cards the server held back, and where to decide on them. An
+      // older deployment sends none of this, in which case there is no gate.
+      var held = (sessionData.newHeld || []).slice();
+      gate = held.length ? {
+        at: sessionData.weakBlock || 0,
+        held: held,
+        box1: sessionData.box1Count || 0,
+        limit: (typeof sessionData.newGate === 'number') ? sessionData.newGate : Infinity,
+        budget: (typeof sessionData.dailyLeft === 'number') ? sessionData.dailyLeft : Infinity,
+        done: false
+      } : null;
       sessionStats = { right: 0, wrong: 0, total: queue.length };
       pending = 0;
       show('session');
@@ -802,7 +877,39 @@
       renderCard();
     }
 
+    // Boxes 1 and 2 come first; new cards only follow them if the box-1 pile has
+    // actually thinned out. Decided the moment that block is done, from the
+    // grades just given: a box-1 card answered right has left box 1, a box-2 card
+    // missed has just joined it — so a session that clears its weak cards earns
+    // its new ones, and one that keeps missing them doesn't get handed more.
+    //
+    // Opening the gate splices the new cards in at the current position and drops
+    // whatever it must off the END of the queue to stay inside the day's budget:
+    // the tail is the session's steadiest material, so that is the right thing to
+    // lose. Nothing at or before the current card moves, so every gradedAs[i] and
+    // the ‹ Back history (indexed by position) stay valid.
+    function resolveGate_() {
+      if (!gate || gate.done || idx < gate.at) return;
+      gate.done = true;
+      var box1 = gate.box1;
+      for (var i = 0; i < gate.at && i < queue.length; i++) {
+        var g = gradedAs[i];
+        if (g === undefined) continue; // skipped or excluded mid-session — box unchanged
+        var b = queue[i].box;
+        if (b === 1 && g) box1--;
+        else if (b === 2 && !g) box1++;
+      }
+      if (box1 >= gate.limit) return; // still shaky — carry on with the rest of the ladder
+      var held = gate.held;
+      var over = Math.max(0, queue.length + held.length - gate.budget);
+      var trim = Math.min(over, Math.max(0, queue.length - idx)); // never cut into history
+      if (trim) queue.splice(queue.length - trim, trim);
+      queue.splice.apply(queue, [idx, 0].concat(held));
+      sessionStats.total = queue.length;
+    }
+
     function renderCard() {
+      resolveGate_();
       if (idx >= queue.length) return finishSession();
       revealed = false;
       if (speechOn) speechSynthesis.cancel(); // don't let the last card talk over this one
@@ -1381,6 +1488,13 @@
       var gap = parseFloat(c.sentence_gap);
       if (!isFinite(gap) || gap < 0) gap = 1.5;
       document.getElementById('set-gap').value = nearestOption_('set-gap', gap);
+      // Same snapping as the Soak settings, with one guard: a real limit must
+      // never read as "No limit", however small it is.
+      var cap = parseInt(c.daily_limit, 10);
+      if (!isFinite(cap) || cap < 0) cap = 80;
+      var capPick = nearestOption_('set-daily', cap);
+      if (cap > 0 && capPick === '0') capPick = '10';
+      document.getElementById('set-daily').value = capPick;
       var rep = parseInt(c.sentence_repeat, 10);
       if (!isFinite(rep) || rep < 1) rep = 1;
       document.getElementById('set-repeat').value = nearestOption_('set-repeat', rep);
@@ -1412,10 +1526,12 @@
     function saveSettings() {
       var lang = readLangSelect('set-lang', 'set-lang-other');
       if (!lang) { document.getElementById('settings-msg').textContent = 'Enter a language tag first.'; return; }
+      var prevCap = String(sessionData.config.daily_limit == null ? '' : sessionData.config.daily_limit).trim();
       var updates = {
         target_language: lang,
         speech_rate: document.getElementById('set-rate').value,
         auto_speak: document.getElementById('set-autospeak').checked ? 'yes' : 'no',
+        daily_limit: document.getElementById('set-daily').value,
         sentence_gap: document.getElementById('set-gap').value,
         sentence_repeat: document.getElementById('set-repeat').value,
         update_check: document.getElementById('set-updatecheck').checked ? 'yes' : 'no'
@@ -1445,6 +1561,9 @@
           document.getElementById('update-hint').classList.add('hidden');
         }
         closeSettings();
+        // The day's numbers on home come from the server, not from config, so a
+        // changed limit needs a re-read to stop the old figures standing there.
+        if (updates.daily_limit !== prevCap) loadHome();
         showToast('Settings saved');
       }
     }

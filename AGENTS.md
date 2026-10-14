@@ -123,8 +123,10 @@ Not pushed but part of the product: `decks/` holds starter decks as plain CSV
 (loaded via **File → Import**, never via code).
 
 Tunables live at the top of `Code.js`: `BOX_INTERVALS`, `MAX_BOX`,
-`KNOWN_START_BOX`, `NEW_PER_SESSION`, `SESSION_MIX_SCALE`, `BOX_FRONT_LOAD`,
-`PRACTICE_LIMIT`, `FLAG_MARK`.
+`KNOWN_START_BOX`, `NEW_PER_DAY`, `PRIORITY_BOX`, `SESSION_MIX_SCALE`,
+`BOX_FRONT_LOAD`, `PRACTICE_LIMIT`, `FLAG_MARK`. `BOX1_NEW_GATE` and
+`DAILY_LIMIT` are fallbacks only — the live values are the `box1_new_gate` and
+`daily_limit` config rows.
 
 Boxes run 1→7 (`1, 2, 4, 8, 16, 32, 64` days). Boxes 6-7 were added because a
 mature deck is ~80% top-box, which pins the daily load at deck/16. `MASTERED_BOX`
@@ -133,12 +135,34 @@ mature deck is ~80% top-box, which pins the daily load at deck/16. `MASTERED_BOX
 same-day cohorts; `boxCounts` and the home box bar follow `MAX_BOX` rather than
 a hardcoded 5.
 
-`getSession` serves every due card; the weakness ranking (`proficiencyBox_`,
-then `accuracy_`, then oldest `due`) only sets the ORDER, via
-`sampleByUrgency_(due, due.length, SESSION_MIX_SCALE)` and `spreadByBox_`. That
-deal weights each box's progress by `box^BOX_FRONT_LOAD`, so weak boxes run
-ahead of an even spread (box 1 finishes ~79% through) while every box still
-shows up in the opening few cards.
+`getSession` builds one sitting in three stages. Boxes 1..`PRIORITY_BOX` (2) come
+first as one block, then boxes 3-7; each segment is ordered by the weakness
+ranking (`proficiencyBox_`, then `accuracy_`, then oldest `due`) and then drawn
+and dealt by `sampleByUrgency_(segment, segment.length, SESSION_MIX_SCALE)` +
+`spreadByBox_`, which weights each box's progress by `box^BOX_FRONT_LOAD` — so
+boxes 1 and 2 alternate through the opening block rather than arriving in one
+wall, and the mature boxes do the same in the tail.
+
+New cards are handed to the client separately (`newHeld`, with `weakBlock`,
+`box1Count` and `newGate`), not spliced into the queue. The client's
+`resolveGate_` plays them only when the box-1/box-2 block is done AND box 1 is
+under the gate — recounted from the grades just given (a box-1 card
+answered right leaves box 1; a box-2 card missed joins it). The threshold comes
+from the `box1_new_gate` config row via `box1Gate_` (`BOX1_NEW_GATE`, 20, is the
+fallback) and travels to the client in `newGate`, which is also what the home
+screen's "new cards wait until box 1 is under N" line reads — so the number is
+stated in one place only. `NEW_PER_DAY` (10) is
+a DAY's allowance, not a sitting's: `getSession` subtracts the cards whose first
+grade was today (`last_seen` today and exactly one attempt ever), so a second
+sitting cannot start it over. When it opens, the
+new cards are inserted at the current position and the same number of cards is
+dropped off the END of the queue, so the sitting stays inside its budget.
+
+That budget is per DAY, not per session: `daily_limit` (default `DAILY_LIMIT`,
+80; `0` = unlimited) minus the cards already graded today, counted from
+`last_seen`, which only `gradeCard` writes — the schedule-neutral drills cost
+nothing. Spent in priority order (weak block, then new, then tail); when it
+reaches 0 the home screen says so and only the drills remain.
 
 ## Sheet schema (`cards` tab) — order matters
 `id, type, front_side, back_side, notes, box, due, last_seen, right, wrong, added, flag, exclude`
@@ -168,6 +192,8 @@ there is nothing to set up and nothing to migrate.
 | `auto_speak` | `yes` | Speak the example on reveal? |
 | `sentence_gap` | `1.5` | Seconds of silence after each sentence in 🎧 Soak. |
 | `sentence_repeat` | `1` | Times 🎧 Soak speaks each sentence before moving on. |
+| `daily_limit` | `80` | Most cards one day serves, across all sittings; cards already graded today count against it. `0` = no limit. |
+| `box1_new_gate` | `20` | New cards wait while box 1 holds this many cards or more, checked after the box-1/box-2 block. `0` = never introduce new cards (box 1 can't hold fewer than 0). Sheet-only — not in ⚙ Settings. |
 | `update_check` | `yes` | Daily anonymous version-check ping (hashed copy id + app version) to the author's collector endpoint. `no` disables it; also toggleable in the app's ⚙ Settings. |
 | `webapp_url` | *(blank)* | `/exec` link for the Sheet's "Open the app ↗" menu. Blank = auto-detect. |
 

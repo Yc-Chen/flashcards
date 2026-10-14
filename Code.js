@@ -37,8 +37,28 @@ var BOX_JITTER = 0.15;
 // "Already knew it" on a brand-new card jumps straight to this box.
 var KNOWN_START_BOX = 4;
 
-// How many never-studied cards to introduce per session.
-var NEW_PER_SESSION = 10;
+// How many never-studied cards to introduce per DAY — not per sitting. Come
+// back a second time and the day's allowance is already spent, however well the
+// box-1 gate below reads: three sittings must not mean thirty new words.
+var NEW_PER_DAY = 10;
+
+// Boxes 1..PRIORITY_BOX are served first, as one block, before anything else.
+// A mature deck is mostly top-box cards, and sprinkling the shaky ones through
+// that tail means the work that actually matters waits for the end of a long
+// sitting. Inside the block the boxes still interleave.
+var PRIORITY_BOX = 2;
+
+// With this many cards or more sitting in box 1, new cards wait: there is
+// already more than enough shaky material in rotation, and adding to it only
+// grows the pile. Checked after the box-1/box-2 block, against what you just
+// graded, so a session that clears box 1 can still earn its new cards.
+// Fallback for a missing or unparseable `box1_new_gate` in the config tab.
+var BOX1_NEW_GATE = 20;
+
+// Most cards one DAY will serve, across however many sittings — fallback for a
+// missing or unparseable `daily_limit`. Cards graded earlier today are already
+// spent against it; 0 (in the config tab) means no limit.
+var DAILY_LIMIT = 80;
 
 // How much flatter the scheduled session's draw is than the weak drill's. 1
 // would hand you a session that is almost entirely box 1 after a break; 2 keeps
@@ -108,6 +128,10 @@ var DEFAULT_CONFIG = [
     'How many times each sentence is spoken before the 🎧 Soak player moves on.'],
   ['new_card_order', 'random',
     'How a study session picks its new cards: "random" (shuffle the deck) or "recent" (most recently added first, by the `added` date).'],
+  ['daily_limit', '80',
+    'Most cards one day will ever serve you, counting everything you already graded today. The rest wait for tomorrow. 0 = no limit.'],
+  ['box1_new_gate', '20',
+    'New cards wait while box 1 holds this many cards or more — checked after the box-1/box-2 block, so a session that clears box 1 still earns them. Raise it to see new words sooner, lower it to finish the shaky pile first. 0 = never introduce new cards.'],
   ['update_check', 'yes',
     'Check for app updates on startup? Sends one anonymous ping a day (an unrecognizable fingerprint of this copy + app version, nothing else) that also lets the author count active users. yes / no'],
   ['webapp_url', '',
@@ -504,7 +528,7 @@ function readConfig_() {
 // is deploy/fork plumbing, and letting the in-app Settings screen change it would
 // be a footgun (point your own app at nowhere). It stays Sheet-only.
 var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak',
-  'sentence_gap', 'sentence_repeat', 'update_check'];
+  'sentence_gap', 'sentence_repeat', 'update_check', 'daily_limit'];
 
 /**
  * Writes one setting from the app's Settings screen. Whitelisted so the client
@@ -759,7 +783,42 @@ function accuracy_(card) {
   return attempts > 0 ? right / attempts : 1;
 }
 
-/** Returns the cards due today + a batch of new cards, plus summary counts. */
+/**
+ * Today's card budget from the config tab, falling back to DAILY_LIMIT when the
+ * cell is blank or nonsense. 0 means no limit — readConfig_ never throws, so a
+ * typo'd value must degrade to the default rather than to zero cards.
+ */
+function dailyLimit_(config) {
+  var raw = config ? config.daily_limit : '';
+  if (String(raw === undefined || raw === null ? '' : raw).trim() === '') return DAILY_LIMIT;
+  var n = Math.floor(Number(raw));
+  if (!isFinite(n) || n < 0) return DAILY_LIMIT;
+  return n;
+}
+
+/**
+ * The box-1 threshold that holds new cards back, from the config tab, falling
+ * back to BOX1_NEW_GATE when the cell is blank or nonsense. 0 is a real value
+ * here, not "no limit": box 1 can never hold fewer than 0 cards, so a 0 keeps
+ * the gate permanently shut and no new card is ever introduced.
+ */
+function box1Gate_(config) {
+  var raw = config ? config.box1_new_gate : '';
+  if (String(raw === undefined || raw === null ? '' : raw).trim() === '') return BOX1_NEW_GATE;
+  var n = Math.floor(Number(raw));
+  if (!isFinite(n) || n < 0) return BOX1_NEW_GATE;
+  return n;
+}
+
+/**
+ * Returns one sitting's cards plus the summary counts the home screen shows.
+ *
+ * Shape of the queue: the box-1/box-2 block first, then boxes 3-7, with up to
+ * NEW_PER_DAY new cards handed over separately (`newHeld`) for the client to
+ * play after the block — but only if the box-1 pile is under the configured
+ * gate (`box1_new_gate`) by then. The whole thing is capped by what is left of
+ * today's budget.
+ */
 function getSession() {
   var data = readCards_();
   var cards = data.cards;
@@ -772,11 +831,22 @@ function getSession() {
   for (var bx = 1; bx <= MAX_BOX; bx++) boxCounts[bx] = 0;
   var flaggedCount = 0;
   var excludedCount = 0;
+  var seenToday = 0;
+  var newToday = 0;
 
   for (var i = 0; i < cards.length; i++) {
     var card = cards[i];
     if (String(card.exclude || '').trim() !== '') { excludedCount++; continue; } // dropped from practice
     if (String(card.flag || '').trim() !== '') flaggedCount++;
+    // Already graded today, so already spent against today's budget. gradeCard
+    // is the only writer of last_seen; the schedule-neutral drills write
+    // nothing, so extra practice never eats into the day's allowance.
+    if (normDate_(card.last_seen) === today) seenToday++;
+    // Introduced today: graded today and graded exactly once ever. A card can't
+    // come round twice in a day (the shortest interval is a day), so one attempt
+    // plus today's stamp means today was its first encounter.
+    if (!isNew_(card) && normDate_(card.last_seen) === today &&
+        (Number(card.right) || 0) + (Number(card.wrong) || 0) === 1) newToday++;
     if (isNew_(card)) {
       newCards.push(card);
       continue;
@@ -821,14 +891,33 @@ function getSession() {
       return da < db ? 1 : -1; // newer date first; blank `added` sorts last
     });
   }
-  // Every due card is served, as before — the ranking only decides the ORDER.
-  // sampleByUrgency_ (the weak drill's weighted draw, flattened by
-  // SESSION_MIX_SCALE) draws the whole pile, so the order is never the same
-  // twice; spreadByBox_ then deals them out weak-first but interleaved, so the
-  // session front-loads the cards you know least without opening on a wall of
-  // box 1. Stop early and what you skip is your steadiest material.
-  var dueBatch = spreadByBox_(sampleByUrgency_(due, due.length, SESSION_MIX_SCALE));
-  var newBatch = newCards.slice(0, NEW_PER_SESSION);
+  // Boxes 1-2 first, as one block, then the rest of the ladder. The ranking
+  // above only sets the odds: each segment is *drawn* from it by sampleByUrgency_
+  // (the weak drill's weighted draw, flattened by SESSION_MIX_SCALE) and then
+  // dealt out by spreadByBox_, so box 1 and box 2 interleave inside the block
+  // instead of opening on a wall of box 1, and boxes 3-7 interleave in the tail.
+  // Neither order repeats between sessions.
+  var weakDue = [], restDue = [];
+  for (var w = 0; w < due.length; w++) {
+    (proficiencyBox_(due[w]) <= PRIORITY_BOX ? weakDue : restDue).push(due[w]);
+  }
+  var weakOrdered = spreadByBox_(sampleByUrgency_(weakDue, weakDue.length, SESSION_MIX_SCALE));
+  var restOrdered = spreadByBox_(sampleByUrgency_(restDue, restDue.length, SESSION_MIX_SCALE));
+
+  // A day's budget, not a session's: whatever you graded earlier today is spent,
+  // so a second sitting continues the same 80 rather than starting another one.
+  var limit = dailyLimit_(config);
+  var budget = limit > 0 ? Math.max(0, limit - seenToday) : due.length + newCards.length;
+
+  // Spent in priority order: the weak block, then the new cards the client may
+  // play, then as much of the tail as fits. restBatch is sized as if no new card
+  // appears; when the gate opens the client splices newHeld in and drops the
+  // same number of cards off the END of the tail, so a session is always exactly
+  // `budget` cards and what it loses is its steadiest material.
+  var weakBatch = weakOrdered.slice(0, budget);
+  var left = budget - weakBatch.length;
+  var newHeld = newCards.slice(0, Math.max(0, Math.min(NEW_PER_DAY - newToday, left)));
+  var restBatch = restOrdered.slice(0, left);
 
   // True size of the weak-cards drill pool (same source of truth the drill
   // uses), so the button label matches what "Practice weak cards" serves.
@@ -859,13 +948,28 @@ function getSession() {
   }
 
   // Payload the client needs — strip nothing, but shape it explicitly.
-  var queue = dueBatch.concat(newBatch).map(toClientCard_);
+  var queue = weakBatch.concat(restBatch).map(toClientCard_);
 
   return {
     today: today,
     dueCount: due.length,
     newCount: newCards.length,
-    newInSession: newBatch.length,
+    newInSession: newHeld.length,
+    // How many leading queue cards are the box-1/box-2 block — where the client
+    // runs the new-card gate — and the cards it plays there if the gate opens.
+    weakBlock: weakBatch.length,
+    newHeld: newHeld.map(toClientCard_),
+    box1Count: boxCounts[1],
+    newGate: box1Gate_(config),
+    // The day's new-card allowance and what's left of it, so home can say which
+    // of the two gates is the one holding new cards back.
+    newToday: newToday,
+    newPerDay: NEW_PER_DAY,
+    // Today's budget: the limit, what is already spent, and what this sitting
+    // may serve (queue.length, plus newHeld if the gate opens).
+    dailyLimit: limit,
+    seenToday: seenToday,
+    dailyLeft: budget,
     totalCards: cards.length,
     activeCards: cards.length - excludedCount,
     boxCounts: boxCounts,
