@@ -411,6 +411,12 @@ var AI_TIME_BUDGET_MS = 4 * 60 * 1000;
 var AI_MAX_ATTEMPTS = 3;
 var AI_RETRY_PAUSE_MS = 2000;
 
+// The manual route — copy a prompt out, paste the reply back — has no six-minute
+// ceiling and costs nothing per card, so it takes a bigger bite. What limits it
+// is the other tool: every card in the prompt has to come back in one reply,
+// and a small local model truncates a long one.
+var AI_COPY_LIMIT = 40;
+
 /**
  * Reports an outcome without blocking the execution.
  *
@@ -470,7 +476,8 @@ function menuAiTest_() {
   try {
     ai = aiConfig_();
   } catch (err) {
-    aiShowResult_('Not set up yet.\n\n' + String((err && err.message) || err));
+    aiShowResult_('Not set up yet.\n\n' + String((err && err.message) || err) +
+      '\n\nNo API key to hand? "Copy the prompt (use your own AI)…" needs none.');
     return;
   }
   try {
@@ -491,35 +498,41 @@ function menuAiFill_() {
   try {
     ai = aiConfig_();
   } catch (err) {
-    aiShowResult_('Not set up yet.\n\n' + String((err && err.message) || err));
+    aiShowResult_('Not set up yet.\n\n' + String((err && err.message) || err) +
+      '\n\nNo API key to hand? The app can hand you the prompt to paste into ' +
+      'any AI you already have — open it and tap "Fill cards with AI".');
     return;
   }
 
   var targets = aiTargets_(readCards_().cards);
   var total = targets.length;
   if (!total) {
-    aiShowResult_(
-      'Nothing to fill. This looks for two things:\n\n' +
-      '• new cards (blank `box`) whose `back_side` is empty\n' +
-      '• cards you flagged (' + FLAG_MARK + ') in the app\n\n' +
-      'Add some fronts, or flag a card you were unhappy with, and run it again.');
+    aiShowResult_(aiNothingToDo_());
     return;
   }
 
   var blanks = targets.filter(function (t) { return t.job === 'fill'; }).length;
   var batch = Math.min(total, AI_PER_RUN_LIMIT);
+  // This route writes without showing the owner first, so the confirmation has
+  // to be the preview: it says what will be overwritten, in those words. The
+  // app's route shows the before and after instead.
   var answer = ui.alert('AI assist',
     total + ' card' + (total === 1 ? '' : 's') + ' to work on: ' +
-      blanks + ' with an empty back side, ' +
-      (total - blanks) + ' flagged (notes only).\n\n' +
+      blanks + ' with no answer yet, ' +
+      (total - blanks) + ' flagged.\n\n' +
     'This run will do the first ' + batch + '. Each card is one request to ' +
       ai.model + ', charged to your own API account.\n\n' +
-    'What gets written:\n' +
-    '• a card with no back side gets `back_side` and `notes`\n' +
-    '• a flagged card gets `notes` only — its `back_side` is the answer you ' +
-      'have been grading against, so it is left alone (unless it is empty)\n\n' +
-    'Nothing else is touched: box, due date, counts and flags stay exactly as ' +
-    'they are, so no card’s schedule moves.\n\n' +
+    'What gets written, with no preview:\n' +
+    '• `back_side` — the answer, rewritten. On a flagged card that replaces ' +
+      'the answer you have been grading against\n' +
+    '• `front_side` — only on a card you have never studied, and only if it ' +
+      'needs tidying\n' +
+    '• `notes` and the flag — **cleared**, because they were your marks that ' +
+      'the card needed work\n\n' +
+    'Nothing else is touched: box, due date and counts stay exactly as they ' +
+    'are, so no card’s schedule moves.\n\n' +
+    'To see each change before it lands, open the app and tap "Fill cards with ' +
+    'AI" instead.\n\n' +
     'Go ahead?',
     ui.ButtonSet.YES_NO);
   if (answer !== ui.Button.YES) return;
@@ -529,31 +542,51 @@ function menuAiFill_() {
   aiShowResult_(aiFillCards());
 }
 
+/** The same "nothing qualifies" explanation, wherever it is needed. */
+function aiNothingToDo_() {
+  return 'Nothing to fill. This looks for two things:\n\n' +
+    '• new cards (blank `box`) with no answer yet\n' +
+    '• cards you flagged (' + FLAG_MARK + ') in the app\n\n' +
+    'Add some fronts, or flag a card you were unhappy with, and run it again.';
+}
+
 /**
  * The two kinds of card worth sending, in the order they are worth sending:
  * unanswered new cards first (a card with no back side cannot be studied at
  * all), then the ones the owner flagged.
- * @return {Array<Object>} Each { card, job: 'fill' | 'improve' }.
+ *
+ * `isNew` rides along because it decides something `job` cannot: whether
+ * `front_side` may be rewritten. A card with a blank `box` has never been
+ * studied, so changing its prompt costs nothing — but a flagged card whose
+ * answer was deleted is `job: 'fill'` and has been studied, and its prompt is
+ * what the owner has been retrieving against.
+ * @return {Array<Object>} Each { card, job: 'fill' | 'redo', isNew }.
  */
 function aiTargets_(cards) {
-  var fill = [], improve = [];
+  var fill = [], redo = [];
   for (var i = 0; i < cards.length; i++) {
     var card = cards[i];
     if (String(card.exclude || '').trim() !== '') continue;   // soft-deleted
     if (String(card.front_side || '').trim() === '') continue; // nothing to go on
     var hasBack = String(card.back_side || '').trim() !== '';
-    if (!hasBack && isNew_(card)) fill.push({ card: card, job: 'fill' });
-    else if (String(card.flag || '').trim() !== '') {
-      improve.push({ card: card, job: hasBack ? 'improve' : 'fill' });
+    var fresh = isNew_(card);
+    if (!hasBack && fresh) {
+      fill.push({ card: card, job: 'fill', isNew: true });
+    } else if (String(card.flag || '').trim() !== '') {
+      redo.push({ card: card, job: hasBack ? 'redo' : 'fill', isNew: fresh });
     }
   }
-  return fill.concat(improve);
+  return fill.concat(redo);
 }
 
 /**
  * Fills as many cards as fit in one run and reports in plain words. Writes each
  * card as its answer arrives rather than at the end, so a timeout or a dropped
  * connection costs the current card and nothing else.
+ *
+ * This route has no preview — the owner agreed to it in the menu's confirmation
+ * instead — but it writes through the same `aiWriteCard_` as the app does, with
+ * the same defaults, so there is one set of rules about what an AI may change.
  * @return {string} A summary fit to show in a dialog.
  */
 function aiFillCards() {
@@ -563,7 +596,7 @@ function aiFillCards() {
   var data = readCards_();
   var targets = aiTargets_(data.cards);
   var started = Date.now();
-  var done = 0, filled = 0, improved = 0, stopped = '';
+  var done = 0, filled = 0, redone = 0, stopped = '';
   var problems = [];
 
   for (var i = 0; i < targets.length; i++) {
@@ -584,7 +617,7 @@ function aiFillCards() {
       continue;
     }
 
-    var wrote = aiWriteCard_(data.sheet, target, fields);
+    var wrote = aiWriteCard_(data.sheet, aiChange_(target, fields), {});
     if (wrote === 'moved') {
       problems.push('id ' + (target.card.id || target.card._row) +
         ': row changed while running — skipped');
@@ -596,13 +629,13 @@ function aiFillCards() {
       continue;
     }
     done++;
-    if (target.job === 'fill') filled++; else improved++;
+    if (target.job === 'fill') filled++; else redone++;
   }
 
   var lines = [];
   lines.push(done
     ? 'Wrote ' + done + ' card' + (done === 1 ? '' : 's') + ': ' +
-      filled + ' filled in, ' + improved + ' with improved notes.'
+      filled + ' filled in, ' + redone + ' rewritten.'
     : 'No cards were written.');
 
   var left = targets.length - done - problems.length;
@@ -619,96 +652,321 @@ function aiFillCards() {
     lines.push(problems.slice(0, 6).join('\n'));
     if (problems.length > 6) lines.push('…and ' + (problems.length - 6) + ' more.');
   }
-  if (improved) {
-    lines.push('');
-    lines.push('Flags are left on, so you can read the new notes in the app and ' +
-      'unflag the ones you are happy with.');
-  }
   return lines.join('\n');
 }
 
+// ---- The app's route: copy a prompt out, paste the reply back --------------
+// Three functions the UI calls over google.script.run (so none of them may be
+// `_`-suffixed — private functions are unreachable from the client). The split
+// is what makes a preview possible: resolving a reply and writing it are two
+// calls, with the owner's confirmation in between.
+
 /**
- * Writes one card's generated fields, guarding the one way this can go wrong:
- * row numbers. A card is addressed by its sheet row, and the row was read
- * before the request went out — so re-read `front_side` and refuse to write if
- * it no longer matches. Rewriting someone's answers onto the wrong card is the
- * single unrecoverable outcome here, and it costs one cell read to prevent.
- * @return {boolean|string} true if written, false if nothing usable, 'moved'
- *     if the row is no longer the card we asked about.
+ * The prompt for every card worth asking about, ready to paste elsewhere.
+ * @return {Object} { prompt, count, total, limit } — `total` exceeds `count`
+ *     when there are more cards than one prompt should carry.
  */
-function aiWriteCard_(sheet, target, fields) {
+function aiPrompt() {
+  var lang = String(readConfig_().target_language || 'nl-NL').trim();
+  var targets = aiTargets_(readCards_().cards);
+  var batch = targets.slice(0, AI_COPY_LIMIT);
+  return {
+    prompt: batch.length ? aiBatchPrompt_(batch, lang) : '',
+    count: batch.length,
+    total: targets.length,
+    limit: AI_COPY_LIMIT
+  };
+}
+
+/**
+ * What a pasted reply would do, without doing any of it. The `notes` and `flag`
+ * each card currently holds travel with the answer so the app can show what
+ * clearing them would cost, and flipping its toggles needs no round trip.
+ * @return {Object} { changes, problems }.
+ */
+function aiPreview(text) {
+  var resolved = aiResolve_(text);
+  return { changes: resolved.changes, problems: resolved.problems };
+}
+
+/**
+ * Writes a reply the owner has just looked at.
+ *
+ * It takes the reply text again rather than the previewed objects: one parse
+ * implementation, nothing client-shaped to trust, and the Sheet is read afresh
+ * here — so a card edited between the preview and the button is caught by
+ * `aiWriteCard_`'s row guard instead of being written from stale state.
+ * @param {string} text The same reply that was previewed.
+ * @param {Object} opts { keepFlag, keepNotes } — both default to false.
+ * @return {Object} { written, filled, redone, problems }.
+ */
+function aiApply(text, opts) {
+  var resolved = aiResolve_(text);
+  var problems = resolved.problems.slice(0);
+  var written = 0, filled = 0, redone = 0;
+
+  for (var i = 0; i < resolved.changes.length; i++) {
+    var change = resolved.changes[i];
+    var wrote = aiWriteCard_(resolved.sheet, change, opts);
+    if (wrote === 'moved') {
+      problems.push('card ' + change.row + ': a different card is on that row ' +
+        'now — skipped');
+      continue;
+    }
+    if (!wrote) {
+      problems.push('card ' + change.row + ': nothing usable in it');
+      continue;
+    }
+    written++;
+    if (change.job === 'fill') filled++; else redone++;
+  }
+  return { written: written, filled: filled, redone: redone, problems: problems };
+}
+
+/**
+ * Turns a pasted reply into one change per card, against the Sheet as it is
+ * now. Shared by the preview and the write so the two cannot disagree: the
+ * targets are recomputed here, not remembered from when the prompt was built,
+ * which is why a card filled in by hand meanwhile simply stops being one.
+ * @return {Object} { sheet, changes, problems }. Writes nothing, locks nothing.
+ */
+function aiResolve_(text) {
+  var entries = aiParseReply_(text);
+  var data = readCards_();
+  var targets = aiTargets_(data.cards);
+  var byRow = {};
+  for (var t = 0; t < targets.length; t++) byRow[targets[t].card._row] = targets[t];
+
+  var changes = [], problems = [], seen = {};
+  for (var i = 0; i < entries.length; i++) {
+    var entry = entries[i];
+    if (seen[entry.row]) continue;        // the same card answered twice
+    seen[entry.row] = true;
+    var target = byRow[entry.row];
+    if (!target) {
+      problems.push('card ' + entry.row + ': not waiting for an answer — it has ' +
+        'one already and is not flagged, or the rows have moved');
+      continue;
+    }
+    var change = aiChange_(target, entry);
+    if (!change.given) {
+      problems.push('card ' + entry.row + ': no back_side in it');
+      continue;
+    }
+    changes.push(change);
+  }
+  return { sheet: data.sheet, changes: changes, problems: problems };
+}
+
+/**
+ * One card's before and after, as a plain object the client can render.
+ *
+ * `front_side` is accepted only on a card that is still new: a studied card has
+ * been retrieved against that exact prompt, so changing it would alter what the
+ * owner has been practising rather than improving it. `given` records whether
+ * there was an answer in the reply at all, which is not the same as the answer
+ * having changed — a model that returns the existing answer verbatim has still
+ * done its job, and the card still counts as dealt with.
+ */
+function aiChange_(target, fields) {
   var card = target.card;
+  var front = String(card.front_side == null ? '' : card.front_side);
+  var back = String(card.back_side == null ? '' : card.back_side);
+  var newFront = String(fields.front_side == null ? '' : fields.front_side).trim();
+  var newBack = String(fields.back_side == null ? '' : fields.back_side).trim();
+  return {
+    row: card._row,
+    id: String(card.id == null ? '' : card.id),
+    type: String(card.type == null ? '' : card.type),
+    isNew: !!target.isNew,
+    job: target.job,
+    given: newBack !== '',
+    front: { before: front, after: (target.isNew && newFront !== '') ? newFront : front },
+    back: { before: back, after: newBack !== '' ? newBack : back },
+    notes: String(card.notes == null ? '' : card.notes),
+    flag: String(card.flag == null ? '' : card.flag).trim()
+  };
+}
+
+/**
+ * Writes one resolved change, guarding the one way this can go wrong: row
+ * numbers. A card is addressed by its sheet row, and the row was read before
+ * the reply came back — so re-read `front_side` and refuse to write if it no
+ * longer matches. Writing someone's answers onto the wrong card is the single
+ * unrecoverable outcome here, and it costs one cell read to prevent.
+ *
+ * `flag` and `notes` are cleared rather than written: both are the owner's own
+ * marks that a card needed work, and the card has just had it. The two `opts`
+ * keep either one — nothing here ever writes a note, because the AI is not
+ * asked for one.
+ * @return {boolean|string} true if written, false if there was no answer to
+ *     write, 'moved' if the row is no longer the card we asked about.
+ */
+function aiWriteCard_(sheet, change, opts) {
+  if (!change.given) return false;
+  var keepFlag = !!(opts && opts.keepFlag);
+  var keepNotes = !!(opts && opts.keepNotes);
+  var frontCol = HEADERS.indexOf('front_side') + 1;
   var backCol = HEADERS.indexOf('back_side') + 1;
   var notesCol = HEADERS.indexOf('notes') + 1;
-  var frontCol = HEADERS.indexOf('front_side') + 1;
-
-  var back = String(fields.back_side == null ? '' : fields.back_side).trim();
-  var notes = String(fields.notes == null ? '' : fields.notes).trim();
-  // `back_side` is only ever written when the card has none: on a flagged card
-  // it is the answer the owner has been graded against, and silently rewriting
-  // it changes what they have been learning.
-  var writeBack = target.job === 'fill' && back !== '';
-  if (!writeBack && !notes) return false;
+  var flagCol = HEADERS.indexOf('flag') + 1;
 
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    if (String(sheet.getRange(card._row, frontCol).getValue()) !==
-        String(card.front_side)) {
+    if (String(sheet.getRange(change.row, frontCol).getValue()) !==
+        change.front.before) {
       return 'moved';
     }
-    if (writeBack) setTextValue_(sheet.getRange(card._row, backCol), back);
-    if (notes) setTextValue_(sheet.getRange(card._row, notesCol), notes);
+    if (change.front.after !== change.front.before) {
+      setTextValue_(sheet.getRange(change.row, frontCol), change.front.after);
+    }
+    if (change.back.after !== change.back.before) {
+      setTextValue_(sheet.getRange(change.row, backCol), change.back.after);
+    }
+    if (!keepNotes && change.notes !== '') {
+      setTextValue_(sheet.getRange(change.row, notesCol), '');
+    }
+    if (!keepFlag && change.flag !== '') {
+      setTextValue_(sheet.getRange(change.row, flagCol), '');
+    }
   } finally {
     lock.releaseLock();
   }
   return true;
 }
 
-/** The deck's own conventions, stated once, as the model's instructions. */
-function aiSystemPrompt_(lang) {
+/**
+ * The deck's own conventions, stated once, as the model's instructions.
+ *
+ * `batch` switches the reply shape only: the API route sends one card per
+ * request and wants one object back, while the copy-out route puts every card
+ * in one prompt and needs each answer labelled with the row it belongs to.
+ * Everything below the shape is the same text either way, because it describes
+ * the deck rather than the transport.
+ */
+function aiSystemPrompt_(lang, batch) {
   return [
     'You write flashcards for a spaced-repetition app. The learner is studying ' +
       'the language with BCP-47 tag ' + lang + '. Their prompts are in that ' +
       'language; explain in English.',
+    ''
+  ].concat(batch ? [
+    'Answer with one JSON array and nothing else, no code fence:',
+    '[{"card": 12, "back_side": "...", "front_side": "..."}]',
     '',
+    'One object per card listed below, carrying that card\'s own "card" number ' +
+      'copied exactly — it is how each answer finds its way back to the right ' +
+      'row. Leave a card out rather than guessing at it.'
+  ] : [
     'Answer with one JSON object and nothing else, no code fence:',
-    '{"back_side": "...", "notes": "..."}',
+    '{"back_side": "...", "front_side": "..."}'
+  ]).concat([
     '',
-    'back_side is the answer the learner is graded on, so it holds ONE fact. ' +
-      'Bold the core gloss with **asterisks**. Add one short example sentence ' +
-      'in ' + lang + ' on its own line, in _underscore italics_, and nothing ' +
-      'else. The app speaks italic spans aloud in ' + lang + ' and never speaks ' +
-      'the bold gloss, so an un-italicised example is one the learner never ' +
-      'hears, and an italicised English gloss is read aloud in the wrong ' +
-      'language. If a word has two unrelated senses, take the more common one ' +
-      'and mention the other in notes.',
+    'back_side is the answer, and the only field you always return. It is what ' +
+      'the learner is graded on, so it holds ONE fact. Bold the core gloss with ' +
+      '**asterisks**, and put any register or caveat in the same line as a ' +
+      'short parenthetical — **to flatly refuse** (informal) — rather than as ' +
+      'a second sentence. Then one short example sentence in ' + lang + ' on ' +
+      'its own line, in _underscore italics_, and nothing else. The app speaks ' +
+      'italic spans aloud in ' + lang + ' and never speaks the bold gloss, so ' +
+      'an un-italicised example is one the learner never hears, and an ' +
+      'italicised English gloss is read aloud in the wrong language. If a word ' +
+      'has two unrelated senses, take the more common one.',
     '',
-    'notes is a short hint shown under the answer: register, how it differs ' +
-      'from a near-synonym, an irregular form, or a second example. Two ' +
-      'sentences at most. Use "" when there is nothing worth saying.',
+    'front_side is the prompt the learner sees, and you return it ONLY for a ' +
+      'card marked "new", and only if it needs tidying — an article or a ' +
+      'parenthetical to strip, a typo, two words that belong on one card. Keep ' +
+      'the same vocabulary item; a different word is a different card. Omit the ' +
+      'field entirely when the prompt is already fine, and for every card not ' +
+      'marked "new": those have been studied against that exact prompt.',
+    '',
+    'Do not return a notes field. The learner owns that one.',
     '',
     'Both fields are Markdown. No headings, no bullet lists, no preamble.'
-  ].join('\n');
+  ]).join('\n');
 }
 
-/** What is being asked of this particular card. */
-function aiUserPrompt_(target) {
+/**
+ * What is being asked of this particular card. With `num` it is one entry in a
+ * list — the job is stated as a short label after the number, because the
+ * sentence form repeats forty times and the number has to lead.
+ */
+function aiUserPrompt_(target, num) {
   var card = target.card;
+  // The two asks, in the words the model needs: a new card may have its prompt
+  // tidied, a studied one may not, and either way the answer is what comes back.
+  var ask = target.isNew
+    ? 'new — write back_side; return front_side only if it needs tidying'
+    : 'studied — rewrite back_side; do not return front_side';
   var lines = [];
-  if (target.job === 'fill') {
-    lines.push('Fill in this card.');
+  if (num) {
+    lines.push('card ' + num + ' (' + ask + ')');
   } else {
-    lines.push('This card is flagged for review. Improve its notes only — ' +
-      'back_side is the answer the learner is already being graded on and must ' +
-      'not be rewritten. Return {"notes": "..."}.');
+    lines.push('This card is ' + ask + '.');
+    lines.push('');
   }
-  lines.push('');
   if (String(card.type || '').trim() !== '') lines.push('type: ' + card.type);
   lines.push('front_side: ' + card.front_side);
-  if (String(card.back_side || '').trim() !== '') lines.push('back_side: ' + card.back_side);
-  lines.push('notes so far: ' + (String(card.notes || '').trim() || '(empty)'));
+  if (String(card.back_side || '').trim() !== '') {
+    lines.push('back_side so far: ' + card.back_side);
+  }
   return lines.join('\n');
+}
+
+/**
+ * Every card in one prompt, for pasting into something that is not an API.
+ * Cards are keyed by sheet row: `id` is free-form in this schema (blank and
+ * duplicate values are both legal, and "Renumber id column" rewrites the lot),
+ * while the row is what a write-back actually addresses.
+ */
+function aiBatchPrompt_(targets, lang) {
+  var blocks = [aiSystemPrompt_(lang, true), ''];
+  blocks.push(targets.length === 1 ? 'The card:' : 'The ' + targets.length + ' cards:');
+  for (var i = 0; i < targets.length; i++) {
+    blocks.push('');
+    blocks.push(aiUserPrompt_(targets[i], targets[i].card._row));
+  }
+  return blocks.join('\n');
+}
+
+/**
+ * Pulls a pasted reply apart into one entry per card. Deliberately forgiving,
+ * because this text has been through a chat window: it may be an array, a
+ * single object, or an object keyed by card number, wrapped in a code fence or
+ * a sentence of commentary. What it cannot do without is a card number per
+ * answer — an answer that does not say which row it is for is not one.
+ * @return {Array<Object>} Each { row, back_side, front_side }.
+ */
+function aiParseReply_(text) {
+  var body = String(text || '');
+  var square = body.indexOf('['), curly = body.indexOf('{');
+  var parsed = (square !== -1 && (curly === -1 || square < curly))
+    ? aiParseJson_(body, '[', ']')
+    : aiParseJson_(body, '{', '}');
+
+  var list = [];
+  if (Object.prototype.toString.call(parsed) === '[object Array]') {
+    list = parsed;
+  } else if (parsed && (parsed.card || parsed.row)) {
+    list = [parsed];                      // one card, answered on its own
+  } else if (parsed) {
+    for (var key in parsed) {             // { "12": { ... }, "19": { ... } }
+      if (parsed[key] && typeof parsed[key] === 'object') {
+        list.push({ card: key, back_side: parsed[key].back_side,
+          front_side: parsed[key].front_side });
+      }
+    }
+  }
+
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i] || {};
+    var row = parseInt(item.card || item.row, 10);
+    if (!row) continue;
+    out.push({ row: row, back_side: item.back_side, front_side: item.front_side });
+  }
+  return out;
 }
 
 /**
@@ -717,18 +975,21 @@ function aiUserPrompt_(target) {
  * no reason, so take the outermost braces and parse those.
  */
 function aiParseFields_(text) {
+  return aiParseJson_(text, '{', '}') || {};
+}
+
+/** The outermost `open`…`close` pair in a reply, parsed. */
+function aiParseJson_(text, open, close) {
   var body = String(text || '');
-  var start = body.indexOf('{'), end = body.lastIndexOf('}');
+  var start = body.indexOf(open), end = body.lastIndexOf(close);
   if (start === -1 || end <= start) {
     throw new Error('the reply was not JSON: ' + body.slice(0, 80));
   }
-  var parsed;
   try {
-    parsed = JSON.parse(body.slice(start, end + 1));
+    return JSON.parse(body.slice(start, end + 1));
   } catch (err) {
     throw new Error('the reply was not valid JSON: ' + body.slice(start, start + 80));
   }
-  return parsed || {};
 }
 
 /**
@@ -1589,6 +1850,10 @@ function getSession() {
     sentenceCount: sentenceCount,
     flaggedCount: flaggedCount,
     excludedCount: excludedCount,
+    // Cards "Fill cards with AI" would work on. Its own rule, not a sum of the
+    // counts above: a new card only qualifies while it has no answer, and the
+    // cards are already in hand here, so counting them costs nothing.
+    aiPending: aiTargets_(cards).length,
     sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
     // Same spreadsheet, but deep-linked to the `cards` tab via its gid. Used for
     // the "open the Sheet" links — landing on `cards` matters for import, where

@@ -213,22 +213,56 @@ them all and reads the leftover punctuation by name, so the phone just says
 but it cannot tell `nl-NL` from `de-DE` — so set it explicitly rather than
 relying on that.
 
-## AI assist (fill in cards) — [HUMAN] setup, then one click
+## AI assist (fill in cards) — two routes, one contract
 
-**🎴 Flashcards → AI assist** sends cards to Google's Gemini API and writes
-the answer back into `back_side` / `notes`, and nothing else — no box, due date, count or
-flag is ever touched, so no card's schedule moves. Two kinds of card qualify:
+Cards get answered by an AI, either in the app (**✨ Fill cards with AI** on the
+home screen — paste the prompt into any AI you have, paste the reply back, and
+approve a before/after preview) or from the Sheet (**🎴 Flashcards → AI assist →
+Fill in new + flagged cards**, which calls Google's Gemini API with a key of
+your own). Both write through the same `aiWriteCard_`, so there is one set of
+rules about what an AI may change. Two kinds of card qualify:
 
-- **empty back side** on a card the app would otherwise serve → gets
-  `back_side` (bold gloss + italic example, the convention below) and `notes`.
-- **flagged** (`⚑`) → gets `notes` only. Its `back_side` is the answer the owner
-  has been graded against; rewriting that silently changes what they learned.
-  A flagged card with an empty back side is treated as the first case.
+- **no answer yet** — a new card (blank `box`) with an empty `back_side`.
+- **flagged** (`⚑`) — the owner marked it as wrong or thin.
 
-Flags are left on, so the owner can read the new notes in the app and unflag
-what they are happy with.
+What gets written, and nothing else:
 
-### Setting it up
+| column | when |
+|---|---|
+| `back_side` | always — this is the field being asked for |
+| `front_side` | **only on a card that is still new**, and only if the AI returns one |
+| `notes` | **cleared**, unless "keep my notes" |
+| `flag` | **cleared**, unless "keep the flags" |
+
+`box`, `due`, `last_seen`, `right` and `wrong` are never touched, so no card's
+schedule moves.
+
+Three things about that table are deliberate:
+
+**The AI is never asked for `notes`.** It used to be — back when nothing was
+previewed, `back_side` was the answer the owner had been graded against and
+rewriting it silently was not defensible, so the AI's contribution went into a
+hint underneath instead. The preview removes that constraint: you see the old
+and the new answer side by side and press the button yourself. `notes` is now
+the owner's own field, and the AI never writes one.
+
+**`flag` and `notes` are cleared rather than kept.** Both are marks that a card
+needed work, and the work has just been done; leaving them would mean the card
+comes back as a target on the next run forever. The two toggles in the preview
+keep either one, per batch.
+
+**`front_side` only moves on a card that is still new.** A blank `box` means the
+card has never been studied, so tidying its prompt (an article to strip, a
+parenthetical, a typo) costs nothing. A studied card has been retrieved against
+that exact prompt — changing it would alter what the owner has been practising
+rather than improve it — so a `front_side` in the reply is ignored there. This
+is decided by `isNew` on the target, not by the job: a flagged card whose answer
+was deleted is `job: 'fill'` but is not new.
+
+### Setting it up (the Gemini route only)
+The app's route needs none of this — it has no key and no endpoint, which is
+the point of it. These three steps are for the Sheet menu's automatic fill.
+
 1. **Set the API key** — *AI assist → Set the API key…*, from
    <https://aistudio.google.com/apikey>. It lands in the
    script's own properties, **not** in a config cell: the Sheet gets copied,
@@ -270,15 +304,16 @@ what they are happy with.
 
 A chat subscription is **not** an API key: Gemini Advanced (like Claude Pro or
 ChatGPT Plus) does not include API access, which has its own key. Say so plainly
-rather than letting someone paste a session cookie. Gemini's free tier covers
-filling cards; its rate limit is per minute, which is what a 429 here usually
-means.
+rather than letting someone paste a session cookie — and point them at the
+app's route below, which is the one that works with a subscription. Gemini's
+free tier covers filling cards; its rate limit is per minute, which is what a
+429 here usually means.
 
 Adding this put `UrlFetchApp` in `Code.js` for the first time, so Apps Script
 now infers the `script.external_request` scope — **the next menu action after
 this ships asks for authorization again.** Expected, once.
 
-### Shape of a run
+### Shape of a Gemini run (the Sheet's route)
 One card is one request, and each card is written as its answer arrives, so a
 failure costs that card and nothing else. A menu action gets ~6 minutes from
 Apps Script, so a run stops at `AI_PER_RUN_LIMIT` (15) cards or 4 minutes and
@@ -303,9 +338,59 @@ through `aiShowResult_`, which logs the line first and then shows a **modeless**
 dialog, which returns immediately. The only blocking dialogs left in this
 feature are the two that ask a genuine question — the key prompt and the fill
 confirmation — and both of them block before any work is done, so a timeout
-there costs nothing. All of those would repeat on every remaining card, so they stop the
-run (`aiError_` marks them `fatal`); a refusal or an unparseable reply is
-per-card and the run carries on.
+there costs nothing.
+
+**This route writes with no preview**, so its confirmation has to do the
+preview's job: `menuAiFill_`'s `ui.alert` says in those words that answers are
+rewritten and that flags and notes are cleared, and points at the app for
+anyone who wants to see each change first.
+
+A key, an endpoint or a model problem would repeat on every remaining card, so
+it stops the run (`aiError_` marks them `fatal`); a refusal or an unparseable
+reply is per-card and the run carries on.
+
+### The app's route: copy out, paste back, preview
+
+An API key is the one thing a local model and a chat subscription do not come
+with, and the Sheet is the wrong place to be doing this from anyway. **✨ Fill
+cards with AI** on the home screen is three steps in one panel, backed by three
+client-callable functions in `Code.js` (none `_`-suffixed — `google.script.run`
+cannot reach private functions):
+
+| step | function | what it does |
+|---|---|---|
+| 1. Copy the prompt | `aiPrompt()` | `aiBatchPrompt_` over the first `AI_COPY_LIMIT` (40) targets → `{ prompt, count, total, limit }` |
+| 2. Paste the reply | `aiPreview(text)` | `{ changes, problems }` — resolves the reply without writing anything |
+| 3. Read it, then write | `aiApply(text, opts)` | `{ written, filled, redone, problems }`, `opts = { keepFlag, keepNotes }` |
+
+`aiApply` takes **the reply text again, not the previewed objects**. One parse
+implementation, nothing client-shaped to trust, and the Sheet is read afresh at
+write time — so a card that changed between the preview and the button is
+caught by the row guard rather than written from stale state. Both calls run
+through `aiResolve_`, which is also where the targets are recomputed, so a card
+filled in by hand in the meantime simply stops being one.
+
+Each change is a plain object the client renders with its own `md()`:
+`{ row, id, type, isNew, job, given, front: {before, after}, back: {before,
+after}, notes, flag }`. `notes` and `flag` are the card's *current* values, not
+a decision — the panel's two toggles redraw from them with no round trip, and
+only the `opts` sent with `aiApply` decide what happens. `given` records
+whether the reply carried an answer at all, which is not the same as the answer
+having changed: a model that returns the existing answer verbatim has still done
+its job, and the card still counts as dealt with.
+
+Parsing is deliberately forgiving (`aiParseReply_`), because the text has been
+through a chat window: an array, a lone object, or an object keyed by card
+number, wrapped in a code fence or a sentence of commentary. The one thing it
+cannot do without is a **card number per answer, which is the sheet row**, not
+`id` — `id` is free-form here (blank and duplicate values are both legal, and
+*Renumber id column* rewrites the lot), while the row is what a write-back
+addresses. A row named twice is written once.
+
+The copy button is the convenience, not the mechanism: the app is served in a
+cross-origin iframe where a scripted copy can be refused outright (iOS Safari
+most of all), so the textarea stays visible and selectable and the fallback text
+names the manual gesture.
 
 ## Authoring your own deck as CSV — [AGENT]
 
@@ -391,8 +476,12 @@ Sheets' importer is browser-only; you cannot do this step for them.
 - **One fact per card.** If `back_side` has two unrelated senses, make two cards.
 - **Front is the retrieval cue** — keep it short and unambiguous. A front that
   matches three different answers trains nothing.
-- Put disambiguation, register, and a usage example in `notes`, not `back_side`,
-  so grading stays a clean yes/no.
+- Keep `back_side` to one fact so grading stays a clean yes/no; a short register
+  parenthetical on the gloss line (`**to flatly refuse** (informal)`) is part of
+  the gloss, not a second fact.
+- `notes` is the owner's field — what *they* keep getting wrong, shown under the
+  answer. An AI fill never writes one and clears it by default (see "AI assist"
+  above), so do not put anything there that the deck depends on.
 - Bold the core gloss in `back_side` and italicise an example sentence (see the
   example above). This is not only typography: **the app speaks _italic_ spans
   aloud in `target_language` and never speaks the bold gloss**, so following the

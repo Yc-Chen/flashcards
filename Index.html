@@ -248,6 +248,9 @@
     }
     .overlay select:focus, .overlay input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
     .overlay .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+    /* Each step of #aifill is one flex item of .panel, so it has to lay its own
+       children out the way .panel would have. */
+    #aifill .panel > div { display: flex; flex-direction: column; gap: 10px; }
     .overlay .row label { margin-top: 0; }
     .overlay .section { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 4px; }
     .overlay .note { color: var(--muted); font-size: 12.5px; line-height: 1.45; margin: 2px 0 0; }
@@ -260,6 +263,31 @@
     .editor-actions { display: flex; gap: 10px; margin-top: 12px; }
     .editor-actions button { flex: 1; padding: 14px; font-size: 16px; }
     .editor-msg { font-size: 13px; color: var(--muted); min-height: 16px; text-align: center; }
+
+    /* AI fill: the prompt box, and one before/after block per card */
+    .ai-box { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px; line-height: 1.45; min-height: 150px; }
+    .ai-step-note { color: var(--muted); font-size: 14px; margin: 0; }
+    .ai-copy-row { display: flex; align-items: center; gap: 10px; }
+    .ai-copy-row .msg { font-size: 13px; color: var(--muted); flex: 1; }
+    .ai-list { display: flex; flex-direction: column; gap: 14px; }
+    .ai-change { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+    .ai-change .who { font-size: 15px; font-weight: 700; word-break: break-word; }
+    .ai-change .who .tag { font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.6px; margin-left: 8px; }
+    .ai-field { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+      color: var(--muted); margin: 10px 0 4px; }
+    .ai-pair { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+    .ai-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+      color: var(--muted); min-width: 30px; padding-top: 4px; flex: none; }
+    .ai-old, .ai-new { font-size: 14px; border-left: 2px solid var(--border);
+      padding-left: 10px; word-break: break-word; flex: 1; }
+    .ai-old { color: var(--muted); }
+    .ai-new { border-left-color: var(--green); }
+    .ai-old .md p, .ai-new .md p { margin: 2px 0; }
+    .ai-meta { font-size: 13px; color: var(--muted); margin-top: 10px; }
+    .ai-problems { font-size: 13px; color: var(--muted); white-space: pre-wrap;
+      word-break: break-word; }
 
     /* Toast */
     .toast {
@@ -324,6 +352,7 @@
       <button class="btn-ghost" id="soak-btn" style="width:100%" onclick="openSoak()">🎧 Soak</button>
       <button class="btn-ghost" style="width:100%" onclick="loadHome()">Refresh</button>
       <div id="flagged-line" class="flagged-line hidden"></div>
+      <a id="aifill-link" class="sheet-link hidden" onclick="openAiFill()"></a>
       <a class="sheet-link" onclick="openAddCards()">＋ Import cards from a file</a>
       <a id="sheet-link" class="sheet-link" href="#" target="_blank" rel="noopener">✏️ Edit cards in Google Sheet ↗</a>
       <a id="update-hint" class="sheet-link update-hint hidden" href="#" target="_blank" rel="noopener"></a>
@@ -494,9 +523,15 @@
       <div class="section">
         <label>AI</label>
         <p class="note">
-          “AI assist” can fill in the answer on cards that have none, and add
-          notes to the ones you’ve flagged. It runs from the Sheet — 🎴
-          Flashcards → AI assist — with a Gemini API key of your own, and the
+          <b>✨ Fill cards with AI</b> on the home screen writes the answer on cards
+          that have none, and rewrites the ones you’ve flagged. It hands you the
+          prompt to paste into whatever AI you already have — a chat
+          subscription, a model on your own machine — takes the reply back, and
+          shows you every change before anything is written. No key needed.
+        </p>
+        <p class="note">
+          The Sheet can also do it automatically — 🎴 Flashcards → AI assist —
+          with a Gemini API key of your own. That route has no preview, and the
           key, the endpoint and the model are set there rather than here.
         </p>
         <a id="set-config-link" class="sheet-link" href="#" target="_blank" rel="noopener">⚙️ Open the config tab ↗</a>
@@ -532,6 +567,66 @@
         <a class="btn-primary" id="addcards-open" href="#" target="_blank" rel="noopener"
            style="text-align:center;text-decoration:none;padding:14px" onclick="closeAddCards()">Open my Sheet ↗</a>
       </div>
+    </div>
+  </div>
+
+  <!-- Fill cards with AI: copy a prompt out, paste the reply back, preview -->
+  <div id="aifill" class="overlay hidden" onclick="if(event.target===this) closeAiFill()">
+    <div class="panel">
+
+      <div id="aifill-step1">
+        <h3>✨ Fill cards with AI</h3>
+        <p class="ai-step-note" id="aifill-count"></p>
+        <p class="ai-step-note">Copy this and paste it into any AI you have — a chat
+          subscription, a model on your own machine. It asks for the answer to each
+          card, as JSON. Nothing is sent from here.</p>
+        <textarea id="aifill-prompt" class="ai-box" readonly rows="8"
+          onclick="this.select()"></textarea>
+        <div class="ai-copy-row">
+          <button class="btn-ghost" onclick="copyAiPrompt()">Copy</button>
+          <span class="msg" id="aifill-copymsg"></span>
+        </div>
+        <div class="editor-actions">
+          <button class="btn-ghost" onclick="closeAiFill()">Cancel</button>
+          <button class="btn-primary" onclick="aiStep(2)">I have a reply →</button>
+        </div>
+      </div>
+
+      <div id="aifill-step2" class="hidden">
+        <h3>Paste the reply</h3>
+        <p class="ai-step-note">Paste what it answered. A code fence or a line of
+          commentary around the JSON is fine. You will see every change before
+          anything is written.</p>
+        <textarea id="aifill-reply" class="ai-box" rows="8"
+          placeholder='[{"card": 12, "back_side": "..."}]'></textarea>
+        <div class="editor-msg" id="aifill-msg"></div>
+        <div class="editor-actions">
+          <button class="btn-ghost" onclick="aiStep(1)">← Back</button>
+          <button class="btn-primary" id="aifill-preview-btn" onclick="aiDoPreview()">Preview changes</button>
+        </div>
+      </div>
+
+      <div id="aifill-step3" class="hidden">
+        <h3>Before you write</h3>
+        <p class="ai-step-note">A flag and a note are your marks that a card needed
+          work, so both are cleared on every card below. Keep either one:</p>
+        <div class="row">
+          <label for="aifill-keepflag">Keep the flags</label>
+          <input type="checkbox" id="aifill-keepflag" onchange="aiRenderChanges()">
+        </div>
+        <div class="row">
+          <label for="aifill-keepnotes">Keep my notes</label>
+          <input type="checkbox" id="aifill-keepnotes" onchange="aiRenderChanges()">
+        </div>
+        <div class="ai-list" id="aifill-list"></div>
+        <p class="ai-problems hidden" id="aifill-problems"></p>
+        <div class="editor-msg" id="aifill-msg2"></div>
+        <div class="editor-actions">
+          <button class="btn-ghost" onclick="aiStep(2)">← Back</button>
+          <button class="btn-primary" id="aifill-write-btn" onclick="aiDoApply()">Write</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -625,6 +720,15 @@
       var link = document.getElementById('sheet-link');
       if (cardsUrl) { link.href = cardsUrl; link.style.display = ''; }
       else { link.style.display = 'none'; }
+
+      var ai = document.getElementById('aifill-link');
+      if (data.aiPending > 0) {
+        ai.textContent = '✨ Fill ' + data.aiPending +
+          (data.aiPending === 1 ? ' card' : ' cards') + ' with AI';
+        ai.classList.remove('hidden');
+      } else {
+        ai.classList.add('hidden');
+      }
 
       var fl = document.getElementById('flagged-line');
       if (data.flaggedCount > 0) {
@@ -1421,6 +1525,205 @@
       document.getElementById('addsentences').classList.remove('hidden');
     }
     function closeAddSentences() { document.getElementById('addsentences').classList.add('hidden'); }
+
+    // ---- Fill cards with AI ----
+    // Three steps in one panel: copy a prompt out, paste the reply back, then
+    // read what it would change and say yes. The server resolves the reply
+    // twice — once for this preview and once for the write — so what lands is
+    // decided against the Sheet as it is at that moment, not against this
+    // screen. See aiPrompt / aiPreview / aiApply in Code.js.
+    var aiChanges = null;    // the previewed changes, kept for re-rendering
+    var aiProblems = [];     // cards the reply named that cannot be written
+    var aiReplyText = '';    // the exact text the preview was built from
+    var aiDirty = false;     // something was written, so the home counts moved
+
+    function openAiFill() {
+      if (!sessionData) { showToast('Still loading — try again in a moment'); return; }
+      aiChanges = null; aiProblems = []; aiReplyText = ''; aiDirty = false;
+      document.getElementById('aifill-reply').value = '';
+      document.getElementById('aifill-msg').textContent = '';
+      document.getElementById('aifill-msg2').textContent = '';
+      document.getElementById('aifill-copymsg').textContent = '';
+      document.getElementById('aifill-keepflag').checked = false;
+      document.getElementById('aifill-keepnotes').checked = false;
+      document.getElementById('aifill-problems').classList.add('hidden');
+      var write = document.getElementById('aifill-write-btn');
+      write.disabled = false; write.textContent = 'Write';
+      var box = document.getElementById('aifill-prompt');
+      box.value = '';
+      var count = document.getElementById('aifill-count');
+      count.textContent = 'Building the prompt…';
+      aiStep(1);
+      document.getElementById('aifill').classList.remove('hidden');
+
+      google.script.run
+        .withSuccessHandler(function (p) {
+          if (!p.count) {
+            closeAiFill();
+            showToast('No cards need filling in');
+            return;
+          }
+          box.value = p.prompt;
+          count.textContent = p.total > p.count
+            ? 'The first ' + p.count + ' of ' + p.total + ' cards — do the rest in a second round.'
+            : p.count + (p.count === 1 ? ' card' : ' cards') + ' to fill in.';
+        })
+        .withFailureHandler(function (e) {
+          count.textContent = String((e && e.message) || e);
+        })
+        .aiPrompt();
+    }
+
+    function closeAiFill() {
+      document.getElementById('aifill').classList.add('hidden');
+      if (aiDirty) { aiDirty = false; loadHome(); }
+    }
+
+    function aiStep(n) {
+      [1, 2, 3].forEach(function (s) {
+        document.getElementById('aifill-step' + s).classList.toggle('hidden', s !== n);
+      });
+    }
+
+    // The textarea stays visible and selectable because this page is served in
+    // a cross-origin iframe, where a scripted copy can be refused outright —
+    // iOS Safari most of all. The button is the convenience, not the mechanism.
+    function copyAiPrompt() {
+      var t = document.getElementById('aifill-prompt');
+      var msg = document.getElementById('aifill-copymsg');
+      t.focus();
+      t.select();
+      try { t.setSelectionRange(0, t.value.length); } catch (e) { }
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e2) { }
+      if (ok) { msg.textContent = 'Copied.'; return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t.value).then(
+          function () { msg.textContent = 'Copied.'; },
+          function () { msg.textContent = 'Selected — press ⌘C (Ctrl+C).'; });
+        return;
+      }
+      msg.textContent = 'Selected — press ⌘C (Ctrl+C).';
+    }
+
+    function aiDoPreview() {
+      var text = document.getElementById('aifill-reply').value;
+      var msg = document.getElementById('aifill-msg');
+      var btn = document.getElementById('aifill-preview-btn');
+      if (!text.trim()) { msg.textContent = 'Nothing pasted yet.'; return; }
+      btn.disabled = true;
+      msg.textContent = 'Reading it…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          btn.disabled = false;
+          msg.textContent = '';
+          if (!res.changes.length) {
+            msg.textContent = res.problems.length
+              ? res.problems.join(' · ')
+              : 'No card numbers in that reply, so there is no way to tell which ' +
+                'rows it is for.';
+            return;
+          }
+          aiChanges = res.changes;
+          aiProblems = res.problems;
+          aiReplyText = text;
+          aiRenderChanges();
+          aiStep(3);
+        })
+        .withFailureHandler(function (e) {
+          btn.disabled = false;
+          msg.textContent = String((e && e.message) || e);
+        })
+        .aiPreview(text);
+    }
+
+    // Rendered from the cached changes, so the two toggles redraw instantly
+    // instead of asking the server what they would do.
+    function aiRenderChanges() {
+      if (!aiChanges) return;
+      var keepFlag = document.getElementById('aifill-keepflag').checked;
+      var keepNotes = document.getElementById('aifill-keepnotes').checked;
+      var list = document.getElementById('aifill-list');
+      list.innerHTML = '';
+
+      aiChanges.forEach(function (c) {
+        var html = '<div class="who">' + escHtml(c.front.before) +
+          '<span class="tag">' + (c.isNew ? 'new' : 'flagged') + '</span></div>';
+        if (c.front.after !== c.front.before) {
+          html += '<div class="ai-field">prompt</div>' +
+            aiPair_('was', 'ai-old', c.front.before) +
+            aiPair_('now', 'ai-new', c.front.after);
+        }
+        html += '<div class="ai-field">answer</div>';
+        // Without the "was"/"now" labels the two blocks read as one passage of
+        // Markdown; a colour difference alone does not say which is which.
+        if (c.back.before) html += aiPair_('was', 'ai-old', c.back.before);
+        html += aiPair_(c.back.before ? 'now' : '', 'ai-new', c.back.after);
+
+        var meta = [];
+        if (c.notes) meta.push(keepNotes ? 'notes kept' : 'notes cleared');
+        if (c.flag) meta.push(keepFlag ? 'flag kept' : 'flag cleared');
+        if (meta.length) html += '<div class="ai-meta">' + meta.join(' · ') + '</div>';
+
+        var el = document.createElement('div');
+        el.className = 'ai-change';
+        el.innerHTML = html;
+        list.appendChild(el);
+      });
+
+      var prob = document.getElementById('aifill-problems');
+      if (aiProblems.length) {
+        prob.textContent = 'Not written:\n' + aiProblems.join('\n');
+        prob.classList.remove('hidden');
+      } else {
+        prob.classList.add('hidden');
+      }
+
+      var n = aiChanges.length;
+      document.getElementById('aifill-write-btn').textContent =
+        'Write ' + n + (n === 1 ? ' card' : ' cards');
+    }
+
+    function aiDoApply() {
+      var btn = document.getElementById('aifill-write-btn');
+      var msg = document.getElementById('aifill-msg2');
+      btn.disabled = true;
+      msg.textContent = 'Writing…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          msg.textContent = '';
+          aiDirty = res.written > 0;
+          var said = res.written
+            ? 'Wrote ' + res.written + (res.written === 1 ? ' card' : ' cards')
+            : 'Nothing was written';
+          // A problem here is one the preview could not have shown — a row that
+          // moved under us — so it stays on screen instead of going out as a
+          // toast that disappears.
+          if (res.problems.length) {
+            btn.textContent = 'Written';
+            document.getElementById('aifill-list').innerHTML = '';
+            var prob = document.getElementById('aifill-problems');
+            prob.textContent = said + '.\n\nNot written:\n' + res.problems.join('\n');
+            prob.classList.remove('hidden');
+            return;
+          }
+          closeAiFill();
+          showToast(said);
+        })
+        .withFailureHandler(function (e) {
+          btn.disabled = false;
+          msg.textContent = String((e && e.message) || e);
+        })
+        .aiApply(aiReplyText, { keepFlag: keepAiFlag_(), keepNotes: keepAiNotes_() });
+    }
+
+    function aiPair_(label, cls, value) {
+      return '<div class="ai-pair"><span class="ai-lbl">' + label + '</span>' +
+        '<div class="' + cls + ' md">' + md(value) + '</div></div>';
+    }
+
+    function keepAiFlag_() { return document.getElementById('aifill-keepflag').checked; }
+    function keepAiNotes_() { return document.getElementById('aifill-keepnotes').checked; }
 
     // ---- Settings ----
     // Fill a language <select> from the voices actually installed (so any pick
