@@ -115,6 +115,8 @@ Sheet, regardless of access level.
   drill (the client grades them without writing back). Also owns the `config`
   tab (`readConfig_`), `resetForFork`, and the menu's `checkSheetHealth`
   layout diagnostic.
+  The `ai*` functions behind the **AI assist** menu live here too — see
+  "AI assist" below.
 - `Index.html` — the entire UI (inline CSS/JS + a small Markdown renderer;
   CDN scripts are blocked in the Apps Script sandbox).
 - `appsscript.json` — manifest (timezone + web-app access).
@@ -195,6 +197,8 @@ there is nothing to set up and nothing to migrate.
 | `daily_limit` | `80` | Most cards one day serves, across all sittings; cards already graded today count against it. `0` = no limit. |
 | `box1_new_gate` | `20` | New cards wait while box 1 holds this many cards or more, checked after the box-1/box-2 block. `0` = never introduce new cards (box 1 can't hold fewer than 0). Sheet-only — not in ⚙ Settings. |
 | `update_check` | `yes` | Daily anonymous version-check ping (hashed copy id + app version) to the author's collector endpoint. `no` disables it; also toggleable in the app's ⚙ Settings. |
+| `ai_endpoint` | `https://generativelanguage.googleapis.com/v1beta` | Where **AI assist** sends a card. Google's Gemini API only; see "AI assist" below. Sheet-only. |
+| `ai_model` | `gemini-flash-latest` | Which Gemini model. Ignored when `ai_endpoint` already names one in its path. Sheet-only. |
 | `webapp_url` | *(blank)* | `/exec` link for the Sheet's "Open the app ↗" menu. Blank = auto-detect. |
 
 Reading it is deliberately failure-proof: `readConfig_()` catches everything and
@@ -208,6 +212,100 @@ them all and reads the leftover punctuation by name, so the phone just says
 *"punt"*. The app now catches the obvious CJK-vs-Latin case and refuses to speak,
 but it cannot tell `nl-NL` from `de-DE` — so set it explicitly rather than
 relying on that.
+
+## AI assist (fill in cards) — [HUMAN] setup, then one click
+
+**🎴 Flashcards → AI assist** sends cards to Google's Gemini API and writes
+the answer back into `back_side` / `notes`, and nothing else — no box, due date, count or
+flag is ever touched, so no card's schedule moves. Two kinds of card qualify:
+
+- **empty back side** on a card the app would otherwise serve → gets
+  `back_side` (bold gloss + italic example, the convention below) and `notes`.
+- **flagged** (`⚑`) → gets `notes` only. Its `back_side` is the answer the owner
+  has been graded against; rewriting that silently changes what they learned.
+  A flagged card with an empty back side is treated as the first case.
+
+Flags are left on, so the owner can read the new notes in the app and unflag
+what they are happy with.
+
+### Setting it up
+1. **Set the API key** — *AI assist → Set the API key…*, from
+   <https://aistudio.google.com/apikey>. It lands in the
+   script's own properties, **not** in a config cell: the Sheet gets copied,
+   exported and shared, and a key in a cell travels with it. (The flip side:
+   Script Properties do not survive a Sheet copy, so a fork sets its own key.)
+2. **Set `ai_endpoint` and `ai_model`** in the config tab. **Gemini only** —
+   one provider on purpose: every API has its own request shape, its own way of
+   carrying the key and its own way of reporting a refusal, so each extra one is
+   a code path that can only be tested one at a time. Gemini is the one with a
+   free tier, so it is the one that works for someone who has not bought
+   anything. `aiIsGemini_` refuses anything else with a message saying so.
+
+   Google is also the API that **names the model in the path**, so both forms
+   work and `aiGeminiUrl_` resolves them:
+
+   | `ai_endpoint` | `ai_model` | URL that gets POSTed |
+   |---|---|---|
+   | `…/v1beta` (or `…/v1beta/models`) | used | `…/v1beta/models/{ai_model}:generateContent` |
+   | `…/v1beta/models/{model}:generateContent` | **ignored** | exactly as pasted |
+
+   A Google URL that is neither is refused rather than composed on a guess: a
+   wrong one 404s with a message about models and sends you looking in the
+   wrong place. `aiConfig_().model` / `.modelFrom` are what actually gets asked
+   and where it came from; *Test the connection* prints both, so a leftover
+   `ai_model` that the URL overrides is visible rather than silently ignored.
+   The `:generateContent` form is accepted on any host, so a proxy in front of
+   Google still works.
+
+   The request is the shape Google's own quickstart prints: `X-goog-api-key`,
+   `contents[].parts[].text`, no `systemInstruction` and no `generationConfig`
+   — the instructions ride in the single user part, because a field an older
+   endpoint doesn't know is a 400 that reads like a model problem. Replies are
+   read from `candidates[0].content.parts[]`, with `promptFeedback.blockReason`
+   and a non-`STOP` `finishReason` reported as their own per-card failures.
+   Vertex AI's host speaks the same shape but wants an OAuth token, not a key;
+   it is accepted as a URL and fails saying the key was rejected, which is true.
+3. **Test the connection** — one cheap round-trip that names the key, endpoint,
+   model and format problem if there is one.
+
+A chat subscription is **not** an API key: Gemini Advanced (like Claude Pro or
+ChatGPT Plus) does not include API access, which has its own key. Say so plainly
+rather than letting someone paste a session cookie. Gemini's free tier covers
+filling cards; its rate limit is per minute, which is what a 429 here usually
+means.
+
+Adding this put `UrlFetchApp` in `Code.js` for the first time, so Apps Script
+now infers the `script.external_request` scope — **the next menu action after
+this ships asks for authorization again.** Expected, once.
+
+### Shape of a run
+One card is one request, and each card is written as its answer arrives, so a
+failure costs that card and nothing else. A menu action gets ~6 minutes from
+Apps Script, so a run stops at `AI_PER_RUN_LIMIT` (15) cards or 4 minutes and
+reports what is left — run it again to carry on. Before writing, the row's
+`front_side` is re-read and compared: write-back is by row number (see
+"Write-back is by row number" below), and landing a generated answer on the
+wrong card is the one unrecoverable outcome here.
+
+HTTP failures are translated by status, because the status says who fixes what:
+401/403 the key, 404 usually the model (it is in the path), 400 the model name
+or a key that cannot reach it, 429 the per-minute quota. 5xx is Google's own
+“this model is experiencing high demand” often enough to be worth waiting out,
+so `aiCall_` retries those `AI_MAX_ATTEMPTS` (3) times, pausing 2s then 4s; a
+5xx that survives that says plainly that nothing is wrong with your setup.
+
+**No outcome is ever reported only in a `ui.alert`.** That call does not return
+until someone clicks OK, so a dialog that is never answered — or never renders,
+because the Sheet is not the tab in front of you — holds the execution open
+until Apps Script kills it at six minutes, logging “Exceeded maximum execution
+time” and losing the account of what actually happened. Every AI result goes
+through `aiShowResult_`, which logs the line first and then shows a **modeless**
+dialog, which returns immediately. The only blocking dialogs left in this
+feature are the two that ask a genuine question — the key prompt and the fill
+confirmation — and both of them block before any work is done, so a timeout
+there costs nothing. All of those would repeat on every remaining card, so they stop the
+run (`aiError_` marks them `fatal`); a refusal or an unparseable reply is
+per-card and the run carries on.
 
 ## Authoring your own deck as CSV — [AGENT]
 

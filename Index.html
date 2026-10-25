@@ -491,6 +491,17 @@
         </p>
       </div>
 
+      <div class="section">
+        <label>AI</label>
+        <p class="note">
+          “AI assist” can fill in the answer on cards that have none, and add
+          notes to the ones you’ve flagged. It runs from the Sheet — 🎴
+          Flashcards → AI assist — with a Gemini API key of your own, and the
+          key, the endpoint and the model are set there rather than here.
+        </p>
+        <a id="set-config-link" class="sheet-link" href="#" target="_blank" rel="noopener">⚙️ Open the config tab ↗</a>
+      </div>
+
       <div class="editor-msg" id="settings-msg"></div>
       <div class="editor-actions">
         <button class="btn-ghost" onclick="closeSettings()">Cancel</button>
@@ -1503,6 +1514,12 @@
       // A fork that blanked UPDATE_CHECK_URL sends nothing regardless — don't
       // offer a switch for a feature that isn't there.
       document.getElementById('set-update-wrap').classList.toggle('hidden', !UPDATE_CHECK_URL);
+      // The AI section is a signpost, not a setting: everything it needs lives
+      // in the Sheet's config tab, so link straight at that tab.
+      var aiLink = document.getElementById('set-config-link');
+      var cfgUrl = sessionData && (sessionData.configUrl || sessionData.sheetUrl);
+      if (cfgUrl) { aiLink.href = cfgUrl; aiLink.style.display = ''; }
+      else { aiLink.style.display = 'none'; }
       var v = appVersion_();
       document.getElementById('settings-version').textContent =
         v ? '🎴 Flashcards · version ' + v : '';

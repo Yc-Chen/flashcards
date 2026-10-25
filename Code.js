@@ -134,6 +134,10 @@ var DEFAULT_CONFIG = [
     'New cards wait while box 1 holds this many cards or more — checked after the box-1/box-2 block, so a session that clears box 1 still earns them. Raise it to see new words sooner, lower it to finish the shaky pile first. 0 = never introduce new cards.'],
   ['update_check', 'yes',
     'Check for app updates on startup? Sends one anonymous ping a day (an unrecognizable fingerprint of this copy + app version, nothing else) that also lets the author count active users. yes / no'],
+  ['ai_endpoint', 'https://generativelanguage.googleapis.com/v1beta',
+    'Where “AI assist” sends a card. Google’s Gemini API only, for now. Leave it at the version (…/v1beta) and the model below is appended, or paste the whole URL from Google’s docs (…/v1beta/models/{model}:generateContent) and the model comes from the URL.'],
+  ['ai_model', 'gemini-flash-latest',
+    'Which model “AI assist” asks, e.g. gemini-flash-latest or gemini-pro-latest. Ignored when ai_endpoint already names a model in its path.'],
   ['webapp_url', '',
     'The /exec link of your own deployment. Leave blank to auto-detect.']
 ];
@@ -177,12 +181,17 @@ function doGet() {
 // can be opened (and the Sheet checked) without touching the Apps Script editor.
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('🎴 Flashcards')
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('🎴 Flashcards')
     .addItem('Open the app ↗', 'menuOpenApp_')
     .addSeparator()
     .addItem('Check Sheet health', 'menuCheckSheet_')
     .addItem('Renumber id column', 'menuRenumberIds_')
+    .addSubMenu(ui.createMenu('AI assist')
+      .addItem('Fill in new + flagged cards', 'menuAiFill_')
+      .addSeparator()
+      .addItem('Set the API key…', 'menuAiKey_')
+      .addItem('Test the connection', 'menuAiTest_'))
     .addSeparator()
     .addItem('View on GitHub ↗', 'menuGitHub_')
     .addItem('About Flashcards (v' + APP_VERSION + ')', 'menuAbout_')
@@ -352,6 +361,596 @@ function renumberIds() {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---- AI card filling -------------------------------------------------------
+// "AI assist" in the Sheet menu sends cards to Google's Gemini API and writes
+// the answer back into `back_side` / `notes` — nothing else. It is the one job
+// in this app that is genuinely tedious by hand: a new card's front is a word
+// you met somewhere, and its back is a dictionary lookup plus an example
+// sentence that follows this deck's bold-gloss / italic-example convention
+// (see "Writing cards that are actually good" in AGENTS.md).
+//
+// One provider, deliberately. Every API has its own request shape, its own way
+// of carrying the key and its own way of reporting a refusal, and supporting
+// several of them means three code paths that can only ever be tested one at a
+// time. Gemini is the one with a free tier, so it is the one that works for
+// someone who has not bought anything.
+//
+// Three settings, and only the first is secret:
+//   • the API key   — Script Properties, set from the menu. NOT a config cell:
+//                     the Sheet gets copied, exported and shared, and a key in
+//                     a cell travels with it.
+//   • ai_endpoint   — config tab. Google's URL, up to the version or including
+//                     the model: .../v1beta, or the whole
+//                     .../v1beta/models/{model}:generateContent as their docs
+//                     print it.
+//   • ai_model      — config tab. Used when the URL stops at the version.
+//                     Google names the model in the PATH, so a URL pasted whole
+//                     already carries it and this row is then ignored.
+//
+// Note for anyone reading this with a chat subscription in mind: a Gemini
+// Advanced (or Claude, or ChatGPT) plan is not an API key. API access is a
+// separate thing with its own key, from aistudio.google.com/apikey. Gemini's
+// free tier covers filling cards; the paid tier costs a fraction of a cent a
+// card.
+
+/** Script Property holding the API key. Never written to the Sheet. */
+var AI_KEY_PROPERTY = 'AI_API_KEY';
+
+// A menu function gets about six minutes before Apps Script kills it, and one
+// card is one request. So a run takes a bounded bite, writes each card as it
+// goes, and tells you what is left — running it again picks up where it
+// stopped. Nothing is batched into a single request on purpose: one card per
+// call means one card can fail without taking the others with it.
+var AI_PER_RUN_LIMIT = 15;
+var AI_TIME_BUDGET_MS = 4 * 60 * 1000;
+
+// Google answers 5xx under load often enough that one is not news. Try again a
+// couple of times, pausing a little longer each time.
+var AI_MAX_ATTEMPTS = 3;
+var AI_RETRY_PAUSE_MS = 2000;
+
+/**
+ * Reports an outcome without blocking the execution.
+ *
+ * ui.alert() does not return until someone clicks OK, so a dialog that is never
+ * answered — or never rendered, which happens when the Sheet is not the tab in
+ * front of you — holds the run open until Apps Script kills it at six minutes
+ * ("Exceeded maximum execution time"), taking the account of what happened with
+ * it. A modeless dialog shows the same text and returns immediately, and the
+ * line is logged first, so the Executions log is the record either way.
+ */
+function aiShowResult_(text) {
+  var body = String(text);
+  console.log('AI assist — ' + body.replace(/\s*\n\s*/g, ' · ').slice(0, 500));
+  var safe = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font:13px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;' +
+      'padding:10px 6px;white-space:pre-wrap;word-break:break-word">' +
+      safe + '</div>'
+  ).setWidth(440).setHeight(300);
+  SpreadsheetApp.getUi().showModelessDialog(html, '🎴 AI assist');
+}
+
+/** Menu: set, replace or clear the API key. */
+function menuAiKey_() {
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+  var current = props.getProperty(AI_KEY_PROPERTY);
+  var response = ui.prompt('AI assist — API key',
+    (current
+      ? 'A key is already set (ending ' + current.slice(-4) + ').\n\n'
+      : 'No key set yet.\n\n') +
+    'Paste a Gemini API key from aistudio.google.com/apikey. It is stored in this ' +
+    'script’s own properties, not in the Sheet, so copying or sharing the ' +
+    'Sheet does not carry it along.\n\n' +
+    'Leave the box empty and press OK to remove the key.',
+    ui.ButtonSet.OK_CANCEL);
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  var key = String(response.getResponseText() || '').trim();
+  if (!key) {
+    props.deleteProperty(AI_KEY_PROPERTY);
+    aiShowResult_('Key removed. AI assist is off until you set one again.');
+    return;
+  }
+  props.setProperty(AI_KEY_PROPERTY, key);
+  var cfg = readConfig_();
+  aiShowResult_(
+    'Key saved (ending ' + key.slice(-4) + ').\n\n' +
+    'Endpoint: ' + (cfg.ai_endpoint || '(blank)') + '\n' +
+    'Model: ' + (cfg.ai_model || '(blank)') + '\n\n' +
+    'Both of those live in the config tab. Use "Test the connection" next.');
+}
+
+/** Menu: one cheap round-trip, to prove the key / endpoint / model agree. */
+function menuAiTest_() {
+  var ai;
+  try {
+    ai = aiConfig_();
+  } catch (err) {
+    aiShowResult_('Not set up yet.\n\n' + String((err && err.message) || err));
+    return;
+  }
+  try {
+    var reply = aiCall_(ai, 'Reply with the single word: ready.', 'Say it.');
+    aiShowResult_('Working.\n\n' +
+      'URL: ' + ai.url + '\n' +
+      'Model: ' + ai.model + ' (from ' + ai.modelFrom + ')\n' +
+      'Reply: ' + reply.slice(0, 120));
+  } catch (err2) {
+    aiShowResult_(String((err2 && err2.message) || err2));
+  }
+}
+
+/** Menu: confirm what will change, fill the cards, report what happened. */
+function menuAiFill_() {
+  var ui = SpreadsheetApp.getUi();
+  var ai;
+  try {
+    ai = aiConfig_();
+  } catch (err) {
+    aiShowResult_('Not set up yet.\n\n' + String((err && err.message) || err));
+    return;
+  }
+
+  var targets = aiTargets_(readCards_().cards);
+  var total = targets.length;
+  if (!total) {
+    aiShowResult_(
+      'Nothing to fill. This looks for two things:\n\n' +
+      '• new cards (blank `box`) whose `back_side` is empty\n' +
+      '• cards you flagged (' + FLAG_MARK + ') in the app\n\n' +
+      'Add some fronts, or flag a card you were unhappy with, and run it again.');
+    return;
+  }
+
+  var blanks = targets.filter(function (t) { return t.job === 'fill'; }).length;
+  var batch = Math.min(total, AI_PER_RUN_LIMIT);
+  var answer = ui.alert('AI assist',
+    total + ' card' + (total === 1 ? '' : 's') + ' to work on: ' +
+      blanks + ' with an empty back side, ' +
+      (total - blanks) + ' flagged (notes only).\n\n' +
+    'This run will do the first ' + batch + '. Each card is one request to ' +
+      ai.model + ', charged to your own API account.\n\n' +
+    'What gets written:\n' +
+    '• a card with no back side gets `back_side` and `notes`\n' +
+    '• a flagged card gets `notes` only — its `back_side` is the answer you ' +
+      'have been grading against, so it is left alone (unless it is empty)\n\n' +
+    'Nothing else is touched: box, due date, counts and flags stay exactly as ' +
+    'they are, so no card’s schedule moves.\n\n' +
+    'Go ahead?',
+    ui.ButtonSet.YES_NO);
+  if (answer !== ui.Button.YES) return;
+
+  // aiFillCards can run for minutes; its summary must not be able to hold the
+  // execution open afterwards, so it is reported, not asked.
+  aiShowResult_(aiFillCards());
+}
+
+/**
+ * The two kinds of card worth sending, in the order they are worth sending:
+ * unanswered new cards first (a card with no back side cannot be studied at
+ * all), then the ones the owner flagged.
+ * @return {Array<Object>} Each { card, job: 'fill' | 'improve' }.
+ */
+function aiTargets_(cards) {
+  var fill = [], improve = [];
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    if (String(card.exclude || '').trim() !== '') continue;   // soft-deleted
+    if (String(card.front_side || '').trim() === '') continue; // nothing to go on
+    var hasBack = String(card.back_side || '').trim() !== '';
+    if (!hasBack && isNew_(card)) fill.push({ card: card, job: 'fill' });
+    else if (String(card.flag || '').trim() !== '') {
+      improve.push({ card: card, job: hasBack ? 'improve' : 'fill' });
+    }
+  }
+  return fill.concat(improve);
+}
+
+/**
+ * Fills as many cards as fit in one run and reports in plain words. Writes each
+ * card as its answer arrives rather than at the end, so a timeout or a dropped
+ * connection costs the current card and nothing else.
+ * @return {string} A summary fit to show in a dialog.
+ */
+function aiFillCards() {
+  var cfg = readConfig_();
+  var ai = aiConfig_(cfg);
+  var lang = String(cfg.target_language || 'nl-NL').trim();
+  var data = readCards_();
+  var targets = aiTargets_(data.cards);
+  var started = Date.now();
+  var done = 0, filled = 0, improved = 0, stopped = '';
+  var problems = [];
+
+  for (var i = 0; i < targets.length; i++) {
+    if (done >= AI_PER_RUN_LIMIT) { stopped = 'run limit'; break; }
+    if (Date.now() - started > AI_TIME_BUDGET_MS) { stopped = 'time limit'; break; }
+
+    var target = targets[i];
+    var fields;
+    try {
+      fields = aiParseFields_(aiCall_(ai,
+        aiSystemPrompt_(lang), aiUserPrompt_(target)));
+    } catch (err) {
+      // A bad key or a wrong endpoint fails identically on every card, so stop
+      // rather than spend fifteen requests proving it.
+      if (err && err.fatal) { stopped = 'error'; problems.push(String(err.message)); break; }
+      problems.push('id ' + (target.card.id || target.card._row) + ': ' +
+        String((err && err.message) || err));
+      continue;
+    }
+
+    var wrote = aiWriteCard_(data.sheet, target, fields);
+    if (wrote === 'moved') {
+      problems.push('id ' + (target.card.id || target.card._row) +
+        ': row changed while running — skipped');
+      continue;
+    }
+    if (!wrote) {
+      problems.push('id ' + (target.card.id || target.card._row) +
+        ': the model returned nothing usable');
+      continue;
+    }
+    done++;
+    if (target.job === 'fill') filled++; else improved++;
+  }
+
+  var lines = [];
+  lines.push(done
+    ? 'Wrote ' + done + ' card' + (done === 1 ? '' : 's') + ': ' +
+      filled + ' filled in, ' + improved + ' with improved notes.'
+    : 'No cards were written.');
+
+  var left = targets.length - done - problems.length;
+  if (stopped === 'run limit' || stopped === 'time limit') {
+    lines.push(left + ' still waiting — run it again to carry on (one run stops ' +
+      'at ' + AI_PER_RUN_LIMIT + ' cards, or four minutes, because Apps Script ' +
+      'cuts a menu action off at six).');
+  } else if (stopped === 'error') {
+    lines.push('Stopped early — the same failure would hit every remaining card.');
+  }
+  if (problems.length) {
+    lines.push('');
+    lines.push('Problems:');
+    lines.push(problems.slice(0, 6).join('\n'));
+    if (problems.length > 6) lines.push('…and ' + (problems.length - 6) + ' more.');
+  }
+  if (improved) {
+    lines.push('');
+    lines.push('Flags are left on, so you can read the new notes in the app and ' +
+      'unflag the ones you are happy with.');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Writes one card's generated fields, guarding the one way this can go wrong:
+ * row numbers. A card is addressed by its sheet row, and the row was read
+ * before the request went out — so re-read `front_side` and refuse to write if
+ * it no longer matches. Rewriting someone's answers onto the wrong card is the
+ * single unrecoverable outcome here, and it costs one cell read to prevent.
+ * @return {boolean|string} true if written, false if nothing usable, 'moved'
+ *     if the row is no longer the card we asked about.
+ */
+function aiWriteCard_(sheet, target, fields) {
+  var card = target.card;
+  var backCol = HEADERS.indexOf('back_side') + 1;
+  var notesCol = HEADERS.indexOf('notes') + 1;
+  var frontCol = HEADERS.indexOf('front_side') + 1;
+
+  var back = String(fields.back_side == null ? '' : fields.back_side).trim();
+  var notes = String(fields.notes == null ? '' : fields.notes).trim();
+  // `back_side` is only ever written when the card has none: on a flagged card
+  // it is the answer the owner has been graded against, and silently rewriting
+  // it changes what they have been learning.
+  var writeBack = target.job === 'fill' && back !== '';
+  if (!writeBack && !notes) return false;
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    if (String(sheet.getRange(card._row, frontCol).getValue()) !==
+        String(card.front_side)) {
+      return 'moved';
+    }
+    if (writeBack) setTextValue_(sheet.getRange(card._row, backCol), back);
+    if (notes) setTextValue_(sheet.getRange(card._row, notesCol), notes);
+  } finally {
+    lock.releaseLock();
+  }
+  return true;
+}
+
+/** The deck's own conventions, stated once, as the model's instructions. */
+function aiSystemPrompt_(lang) {
+  return [
+    'You write flashcards for a spaced-repetition app. The learner is studying ' +
+      'the language with BCP-47 tag ' + lang + '. Their prompts are in that ' +
+      'language; explain in English.',
+    '',
+    'Answer with one JSON object and nothing else, no code fence:',
+    '{"back_side": "...", "notes": "..."}',
+    '',
+    'back_side is the answer the learner is graded on, so it holds ONE fact. ' +
+      'Bold the core gloss with **asterisks**. Add one short example sentence ' +
+      'in ' + lang + ' on its own line, in _underscore italics_, and nothing ' +
+      'else. The app speaks italic spans aloud in ' + lang + ' and never speaks ' +
+      'the bold gloss, so an un-italicised example is one the learner never ' +
+      'hears, and an italicised English gloss is read aloud in the wrong ' +
+      'language. If a word has two unrelated senses, take the more common one ' +
+      'and mention the other in notes.',
+    '',
+    'notes is a short hint shown under the answer: register, how it differs ' +
+      'from a near-synonym, an irregular form, or a second example. Two ' +
+      'sentences at most. Use "" when there is nothing worth saying.',
+    '',
+    'Both fields are Markdown. No headings, no bullet lists, no preamble.'
+  ].join('\n');
+}
+
+/** What is being asked of this particular card. */
+function aiUserPrompt_(target) {
+  var card = target.card;
+  var lines = [];
+  if (target.job === 'fill') {
+    lines.push('Fill in this card.');
+  } else {
+    lines.push('This card is flagged for review. Improve its notes only — ' +
+      'back_side is the answer the learner is already being graded on and must ' +
+      'not be rewritten. Return {"notes": "..."}.');
+  }
+  lines.push('');
+  if (String(card.type || '').trim() !== '') lines.push('type: ' + card.type);
+  lines.push('front_side: ' + card.front_side);
+  if (String(card.back_side || '').trim() !== '') lines.push('back_side: ' + card.back_side);
+  lines.push('notes so far: ' + (String(card.notes || '').trim() || '(empty)'));
+  return lines.join('\n');
+}
+
+/**
+ * Pulls the two fields out of the model's reply. Models wrap JSON in prose or a
+ * code fence often enough that insisting on a clean parse would fail cards for
+ * no reason, so take the outermost braces and parse those.
+ */
+function aiParseFields_(text) {
+  var body = String(text || '');
+  var start = body.indexOf('{'), end = body.lastIndexOf('}');
+  if (start === -1 || end <= start) {
+    throw new Error('the reply was not JSON: ' + body.slice(0, 80));
+  }
+  var parsed;
+  try {
+    parsed = JSON.parse(body.slice(start, end + 1));
+  } catch (err) {
+    throw new Error('the reply was not valid JSON: ' + body.slice(start, start + 80));
+  }
+  return parsed || {};
+}
+
+/**
+ * The settings, validated together — every failure here is a setup mistake,
+ * and saying which one is wrong is the whole job.
+ *
+ * `url` is what actually gets POSTed and `model` is what is actually asked,
+ * which are not always the two cells as typed: Google names the model in the
+ * path (`/models/{model}:generateContent`), so the URL may carry it and the
+ * `ai_model` row is then not needed.
+ * @return {Object} { endpoint, url, model, modelFrom, key }.
+ */
+function aiConfig_(config) {
+  var cfg = config || readConfig_();
+  var endpoint = String(cfg.ai_endpoint || '').trim();
+  var model = String(cfg.ai_model || '').trim();
+  var key = String(PropertiesService.getScriptProperties()
+    .getProperty(AI_KEY_PROPERTY) || '').trim();
+
+  if (!key) {
+    throw new Error('No API key set. Use “AI assist → Set the API ' +
+      'key…” first.\n\nGet one from aistudio.google.com/apikey — a Gemini ' +
+      'Advanced subscription is not an API key and will not work here.');
+  }
+  if (!endpoint) {
+    throw new Error('The `ai_endpoint` row of the config tab is empty. It wants ' +
+      'Google’s URL:\nhttps://generativelanguage.googleapis.com/v1beta');
+  }
+  if (!/^https:\/\//i.test(endpoint)) {
+    throw new Error('`ai_endpoint` must be an https:// URL. It currently says: ' +
+      endpoint);
+  }
+  if (!aiIsGemini_(endpoint)) {
+    throw new Error('AI assist only speaks Google’s Gemini API for now, and ' +
+      'that is not one of its URLs:\n' + endpoint + '\n\nUse\n' +
+      'https://generativelanguage.googleapis.com/v1beta\nor the full ' +
+      '…/v1beta/models/{model}:generateContent as Google’s own docs print it.');
+  }
+
+  var urlModel = aiUrlModel_(endpoint);
+  if (!model && !urlModel) {
+    throw new Error('The `ai_model` row of the config tab is empty. Put a model ' +
+      'id there, e.g. gemini-flash-latest — or end `ai_endpoint` with ' +
+      '/models/{model}:generateContent and it comes from the URL instead.');
+  }
+
+  return {
+    endpoint: endpoint,
+    url: aiGeminiUrl_(endpoint, model, urlModel),
+    model: urlModel || model,
+    modelFrom: urlModel ? 'the endpoint URL' : 'the `ai_model` row',
+    key: key
+  };
+}
+
+/**
+ * Whether this URL is Google's generative-language API. The `:generateContent`
+ * form is accepted on any host so that a proxy in front of it still works — it
+ * is the same request either way.
+ */
+function aiIsGemini_(endpoint) {
+  return /(^|\.)googleapis\.com\//i.test(endpoint) ||
+    /:(stream)?generateContent/i.test(endpoint);
+}
+
+/** The model named in Google's path, or '' if the URL names none. */
+function aiUrlModel_(endpoint) {
+  var m = endpoint.match(/\/models\/([^\/:?]+):(?:stream)?generateContent/i);
+  return m ? m[1] : '';
+}
+
+/**
+ * The URL to POST. A URL that already names a model is used exactly as pasted —
+ * that is how Google's docs give it, and it is the one case where `ai_model` has
+ * nothing to add. A bare version or `…/models` base gets the model appended.
+ * Anything else is refused rather than guessed at: a composed-wrong URL 404s
+ * with a message about models, which would send someone looking in the wrong
+ * place.
+ */
+function aiGeminiUrl_(endpoint, model, urlModel) {
+  if (urlModel) return endpoint;
+  var base = endpoint.replace(/\/+$/, '');
+  if (/\/models$/i.test(base)) return base + '/' + model + ':generateContent';
+  if (/\/v1[a-z0-9]*$/i.test(base)) return base + '/models/' + model + ':generateContent';
+  throw new Error('That is a Google URL, but not one this can complete:\n' +
+    endpoint + '\n\nEither paste the full URL from Google’s docs, which ends ' +
+    '…/models/{model}:generateContent, or end it at the version (…/v1beta) ' +
+    'and let the `ai_model` row fill in the rest.');
+}
+
+/**
+ * One request, one answer. Errors are thrown with a dialog-ready message; the
+ * ones that would repeat identically on every card are marked `fatal` so the
+ * caller can stop.
+ * @return {string} The model's reply text.
+ */
+function aiCall_(ai, system, user) {
+  // The instructions ride along in the one user part rather than in
+  // `systemInstruction`, and nothing sets a generationConfig: this has to work
+  // against whatever version and model someone pasted, and a field an older
+  // endpoint does not know is a 400 that reads like a model problem. The
+  // request stays the shape Google's own quickstart prints.
+  var payload = {
+    contents: [{ role: 'user', parts: [{ text: system + '\n\n' + user }] }]
+  };
+
+  // Everything about a run is logged as it happens, and never only reported in
+  // a dialog: ui.alert() blocks the execution until someone clicks OK, so a
+  // dialog that is never answered ends the run with "Exceeded maximum execution
+  // time" and takes the only account of what happened with it. The Executions
+  // log is the record; the dialog is a convenience. (The URL is safe to log —
+  // the key travels in a header, never in the path.)
+  // A 5xx from Google is routinely "this model is experiencing high demand",
+  // which is over in seconds — so it is worth waiting out rather than failing a
+  // card on. Short, bounded and linear: the point is to ride out a blip, not to
+  // hammer an outage, and the whole run shares one six-minute ceiling.
+  var code, text, body;
+  for (var attempt = 1; attempt <= AI_MAX_ATTEMPTS; attempt++) {
+    console.log('AI request → ' + ai.url +
+      (attempt > 1 ? ' (attempt ' + attempt + ')' : ''));
+    var started = Date.now();
+    var response;
+    try {
+      response = UrlFetchApp.fetch(ai.url, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'X-goog-api-key': ai.key },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+    } catch (err) {
+      console.log('AI request failed after ' + (Date.now() - started) + 'ms: ' +
+        String((err && err.message) || err));
+      throw aiError_('could not reach ' + ai.url + ' — ' +
+        String((err && err.message) || err), true);
+    }
+
+    code = response.getResponseCode();
+    text = response.getContentText();
+    console.log('AI response ' + code + ' in ' + (Date.now() - started) + 'ms, ' +
+      text.length + ' bytes');
+    body = {};
+    try { body = JSON.parse(text) || {}; } catch (err2) { /* an HTML error page */ }
+
+    if (code < 500 || attempt === AI_MAX_ATTEMPTS) break;
+    Utilities.sleep(AI_RETRY_PAUSE_MS * attempt);
+  }
+
+  if (code < 200 || code >= 300) throw aiHttpError_(code, body, text, ai);
+  return aiGeminiText_(body);
+}
+
+/**
+ * Google: text parts out of the first candidate. Both ways this comes back
+ * empty are worth naming rather than reporting as "no text": a prompt the
+ * safety filter stopped before generation (`promptFeedback.blockReason`), and a
+ * candidate cut short (`finishReason`).
+ */
+function aiGeminiText_(body) {
+  var blocked = body.promptFeedback && body.promptFeedback.blockReason;
+  if (blocked) throw aiError_('the request was blocked (' + blocked + ')', false);
+
+  var candidate = (body.candidates || [])[0];
+  var reason = candidate && candidate.finishReason;
+  var parts = (candidate && candidate.content && candidate.content.parts) || [];
+  var out = [];
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i].text) out.push(parts[i].text);
+  }
+  if (!out.length) {
+    throw aiError_('the reply had no text in it' +
+      (reason ? ' (' + reason + ')' : ''), false);
+  }
+  if (reason && reason !== 'STOP') {
+    throw aiError_('the reply stopped early (' + reason + ')', false);
+  }
+  return out.join('');
+}
+
+/** An Error carrying whether the caller should give up on the whole run. */
+function aiError_(message, fatal) {
+  var err = new Error(message);
+  err.fatal = !!fatal;
+  return err;
+}
+
+/**
+ * HTTP failures, translated. The status says who should fix what: 401/403 is
+ * the key, 404 the endpoint, 400 usually the model id, 429 the account — all of
+ * which would repeat on every remaining card, so all of them stop the run.
+ */
+function aiHttpError_(code, body, text, ai) {
+  var detail = (body.error && (body.error.message || body.error.type)) ||
+    body.message || String(text || '').slice(0, 200) || '(no details)';
+  if (code === 401 || code === 403) {
+    return aiError_('Google rejected the API key (HTTP ' + code + '). Set it ' +
+      'again with “AI assist → Set the API key…”, from ' +
+      'aistudio.google.com/apikey.\n\n' + detail, true);
+  }
+  if (code === 404) {
+    return aiError_('Nothing at that URL (HTTP 404):\n' + ai.url +
+      '\n\nUsually this is the model rather than the URL — on Google’s API the ' +
+      'model name is part of the path. It is asking for “' + ai.model +
+      '”, taken from ' + ai.modelFrom + '.\n\n' + detail, true);
+  }
+  if (code === 400) {
+    return aiError_('Google refused the request (HTTP 400), which usually means ' +
+      'the model name is wrong or not available to this key. It is asking for ' +
+      '“' + ai.model + '”, taken from ' + ai.modelFrom + '.\n\n' +
+      detail, true);
+  }
+  if (code === 429) {
+    return aiError_('Rate-limited or out of quota (HTTP 429). Gemini’s free ' +
+      'tier has a per-minute limit, so waiting a minute and running it again is ' +
+      'often enough — the cards already written are saved.\n\n' + detail, true);
+  }
+  if (code >= 500) {
+    return aiError_('Google is overloaded or down (HTTP ' + code + '), after ' +
+      AI_MAX_ATTEMPTS + ' tries. Nothing is wrong with your setup — try again ' +
+      'in a few minutes.\n\n' + detail, true);
+  }
+  return aiError_('Google failed (HTTP ' + code + '): ' + detail, false);
 }
 
 /** Menu: pop a dialog with a link to the project's GitHub repo (setup + source). */
@@ -947,6 +1546,18 @@ function getSession() {
     // Count stays 0 and the URL blank — the client falls back to sheetUrl.
   }
 
+  // Deep link to the `config` tab, for the ⚙ Settings screen's AI section:
+  // AI assist is configured in the Sheet, so the app's job there is to point at
+  // the right tab rather than to offer the settings itself. Guarded like
+  // sentencesUrl — the client falls back to sheetUrl.
+  var configUrl = '';
+  try {
+    configUrl = SpreadsheetApp.getActiveSpreadsheet().getUrl() +
+      '#gid=' + getConfigSheet_().getSheetId();
+  } catch (err2) {
+    // Blank, and the Settings link lands on the Sheet's first tab instead.
+  }
+
   // Payload the client needs — strip nothing, but shape it explicitly.
   var queue = weakBatch.concat(restBatch).map(toClientCard_);
 
@@ -984,6 +1595,7 @@ function getSession() {
     // "Append to current sheet" targets whatever tab happens to be active.
     cardsUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() + '#gid=' + data.sheet.getSheetId(),
     sentencesUrl: sentencesUrl,
+    configUrl: configUrl,
     version: APP_VERSION,
     installId: installId_(),
     // Settings from the `config` tab. The client caches this for the page's
