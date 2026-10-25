@@ -247,8 +247,8 @@ Add a row to the `cards` tab (laptop or phone). Fill `front_side`, `back_side`,
 optionally `type` and `notes`. **Leave `box`/`due` empty** so it appears as a
 new card. You can hand-tune proficiency any time by editing `box` and `due`.
 
-To bulk-add a whole deck from a CSV, tap **＋ Import cards from a file** on the
-home screen — it walks you through Google Sheets' own **File → Import** (a
+To bulk-add a whole deck from a CSV, tap **✏️ Edit or import cards in the Sheet**
+on the home screen — it walks you through Google Sheets' own **File → Import** (a
 laptop/desktop step; the Sheets mobile app can't import). The one setting that
 matters there is **“Convert text to numbers, dates, and formulas” → No**, or
 Google turns entries like `1/2` into dates.

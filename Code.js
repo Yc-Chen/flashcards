@@ -1693,6 +1693,11 @@ function getSession() {
   var excludedCount = 0;
   var seenToday = 0;
   var newToday = 0;
+  var aiPending = aiTargets_(cards);
+  var aiPendingFlagged = 0;
+  for (var a = 0; a < aiPending.length; a++) {
+    if (String(aiPending[a].card.flag || '').trim() !== '') aiPendingFlagged++;
+  }
 
   for (var i = 0; i < cards.length; i++) {
     var card = cards[i];
@@ -1850,10 +1855,13 @@ function getSession() {
     sentenceCount: sentenceCount,
     flaggedCount: flaggedCount,
     excludedCount: excludedCount,
-    // Cards "Fill cards with AI" would work on. Its own rule, not a sum of the
-    // counts above: a new card only qualifies while it has no answer, and the
+    // Cards "Fill cards with AI" would work on, split by the reason they
+    // qualify. Its own rule, not a sum of the counts above: a new card only
+    // qualifies while it has no answer, and a flagged one with no front at all
+    // cannot be asked about — so this is not `newCount + flaggedCount`. The
     // cards are already in hand here, so counting them costs nothing.
-    aiPending: aiTargets_(cards).length,
+    aiPending: aiPending.length,
+    aiPendingFlagged: aiPendingFlagged,
     sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
     // Same spreadsheet, but deep-linked to the `cards` tab via its gid. Used for
     // the "open the Sheet" links — landing on `cards` matters for import, where

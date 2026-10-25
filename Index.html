@@ -180,7 +180,6 @@
     .btn-peek { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
 
     .flagged-line { text-align: center; font-size: 13px; padding: 2px 6px; }
-    .flagged-line a { color: #f59e0b; text-decoration: none; }
     .daily-line { color: var(--muted); }
 
     /* Practice-mode cue (schedule-neutral drill) */
@@ -353,8 +352,7 @@
       <button class="btn-ghost" style="width:100%" onclick="loadHome()">Refresh</button>
       <div id="flagged-line" class="flagged-line hidden"></div>
       <a id="aifill-link" class="sheet-link hidden" onclick="openAiFill()"></a>
-      <a class="sheet-link" onclick="openAddCards()">＋ Import cards from a file</a>
-      <a id="sheet-link" class="sheet-link" href="#" target="_blank" rel="noopener">✏️ Edit cards in Google Sheet ↗</a>
+      <a id="sheet-link" class="sheet-link" onclick="openCardSheet()">✏️ Edit or import cards in the Sheet ↗</a>
       <a id="update-hint" class="sheet-link update-hint hidden" href="#" target="_blank" rel="noopener"></a>
     </div>
 
@@ -547,25 +545,35 @@
   </div>
 
   <!-- Import cards modal -->
-  <div id="addcards" class="overlay hidden" onclick="if(event.target===this) closeAddCards()">
+  <!-- The one place the card Sheet is explained: open it, or import into it -->
+  <div id="cardsheet" class="overlay hidden" onclick="if(event.target===this) closeCardSheet()">
     <div class="panel">
-      <h3>Import cards from a file</h3>
+      <h3>✏️ Your cards live in the Sheet</h3>
       <p style="color:var(--muted);font-size:14px;margin:0">
-        Your cards live in the Google Sheet. To bulk-add a deck from a CSV file,
-        open the Sheet and use its own importer:
+        Every card is a row in the <strong>cards</strong> tab. Edit one there and
+        this app picks it up on the next refresh — there is no second copy.
       </p>
-      <ol class="steps">
-        <li>Tap <strong>Open my Sheet</strong> below — it opens the <strong>cards</strong> tab. Then <strong>File → Import → Upload</strong> your CSV.</li>
-        <li>Import location: <strong>Append to current sheet</strong> adds to your deck (it appends to the <strong>cards</strong> tab you just landed on). <strong>Replace current sheet</strong> is a fresh start — it erases existing cards and progress.</li>
-        <li>Set <strong>“Convert text to numbers, dates, and formulas” → No</strong>. This matters: otherwise Google mangles entries like <code>1/2</code> into dates.</li>
-      </ol>
-      <p style="color:var(--muted);font-size:13px;margin:6px 0 0">
-        Importing is a laptop/desktop task — the Sheets mobile app can’t do File → Import.
-      </p>
+      <a class="btn-primary" id="cardsheet-open" href="#" target="_blank" rel="noopener"
+         style="text-align:center;text-decoration:none;padding:14px" onclick="closeCardSheet()">Open the cards tab ↗</a>
+
+      <div class="section">
+        <label>Adding a whole deck from a file</label>
+        <p style="color:var(--muted);font-size:14px;margin:8px 0 0">
+          There is no importer in this app — the Sheet has its own, and that
+          import <em>is</em> the load:
+        </p>
+        <ol class="steps">
+          <li>Open the cards tab above, then <strong>File → Import → Upload</strong> your CSV.</li>
+          <li>Import location: <strong>Append to current sheet</strong> adds to your deck (it appends to the <strong>cards</strong> tab you just landed on). <strong>Replace current sheet</strong> is a fresh start — it erases existing cards and progress.</li>
+          <li>Set <strong>“Convert text to numbers, dates, and formulas” → No</strong>. This matters: otherwise Google mangles entries like <code>1/2</code> into dates.</li>
+        </ol>
+        <p style="color:var(--muted);font-size:13px;margin:6px 0 0">
+          Importing is a laptop/desktop task — the Sheets mobile app can’t do File → Import.
+        </p>
+      </div>
+
       <div class="editor-actions">
-        <button class="btn-ghost" onclick="closeAddCards()">Close</button>
-        <a class="btn-primary" id="addcards-open" href="#" target="_blank" rel="noopener"
-           style="text-align:center;text-decoration:none;padding:14px" onclick="closeAddCards()">Open my Sheet ↗</a>
+        <button class="btn-ghost" onclick="closeCardSheet()">Close</button>
       </div>
     </div>
   </div>
@@ -714,31 +722,45 @@
       document.getElementById('new-count').textContent = data.newCount;
       updateSubtitle_();
 
-      // Edit + flagged links go to the cards tab specifically (both are about
-      // card rows), falling back to the plain spreadsheet URL on old payloads.
+      // The Sheet row opens a panel rather than linking straight out, because
+      // the panel is also where importing a deck is explained; it carries the
+      // link itself. Hide the row when there is no URL for it to offer.
       var cardsUrl = data.cardsUrl || data.sheetUrl;
       var link = document.getElementById('sheet-link');
-      if (cardsUrl) { link.href = cardsUrl; link.style.display = ''; }
-      else { link.style.display = 'none'; }
+      link.style.display = cardsUrl ? '' : 'none';
 
-      var ai = document.getElementById('aifill-link');
-      if (data.aiPending > 0) {
-        ai.textContent = '✨ Fill ' + data.aiPending +
-          (data.aiPending === 1 ? ' card' : ' cards') + ' with AI';
-        ai.classList.remove('hidden');
-      } else {
-        ai.classList.add('hidden');
-      }
-
+      // The flagged line states a count; the AI line offers the one action for
+      // it. It used to carry its own "open Sheet" link as well, which was the
+      // same destination as "Edit cards in Google Sheet" two rows below.
       var fl = document.getElementById('flagged-line');
       if (data.flaggedCount > 0) {
-        var target = cardsUrl
-          ? '<a href="' + cardsUrl + '" target="_blank" rel="noopener">open Sheet ↗</a>'
-          : '';
-        fl.innerHTML = '⚑ ' + data.flaggedCount + ' flagged for editing — ' + target;
+        fl.textContent = '⚑ ' + data.flaggedCount + ' flagged for editing';
         fl.classList.remove('hidden');
       } else {
         fl.classList.add('hidden');
+      }
+
+      // Every flagged card is an AI target, so this count restates the one
+      // above whenever nothing else qualifies. Name what it covers instead of
+      // printing the same number twice with no explanation.
+      var ai = document.getElementById('aifill-link');
+      var pending = data.aiPending || 0;
+      var pendingFlagged = data.aiPendingFlagged || 0;
+      var pendingNew = pending - pendingFlagged;
+      if (pending > 0) {
+        var label;
+        if (!pendingNew) {
+          label = pending === 1 ? 'Fill this one with AI' : 'Fill these ' + pending + ' with AI';
+        } else if (!pendingFlagged) {
+          label = 'Fill ' + pendingNew + (pendingNew === 1 ? ' new card' : ' new cards') + ' with AI';
+        } else {
+          label = 'Fill ' + pending + ' cards with AI — ' + pendingNew + ' new, ' +
+            pendingFlagged + ' flagged';
+        }
+        ai.textContent = '✨ ' + label;
+        ai.classList.remove('hidden');
+      } else {
+        ai.classList.add('hidden');
       }
 
       // Driven by whatever boxes the server reports, so the ladder can grow
@@ -1502,17 +1524,20 @@
     // Deliberately not an in-app parser: Sheets already has one, and delegating
     // to it keeps this to a link plus the two gotchas that actually bite
     // (Append vs Replace, and the number/date auto-conversion).
-    function openAddCards() {
-      var open = document.getElementById('addcards-open');
+    // Both things you do to the card Sheet — open it to edit, import a deck into
+    // it — end up on the same tab, so they are one entry with the link first and
+    // the import recipe under it rather than two rows to the same place.
+    function openCardSheet() {
+      var open = document.getElementById('cardsheet-open');
       // Deep-link to the cards tab: "Append to current sheet" in the import
       // dialog targets whatever tab is active, so landing on cards is what makes
       // the default choice correct.
       var url = sessionData && (sessionData.cardsUrl || sessionData.sheetUrl);
       if (url) { open.href = url; open.style.display = ''; }
       else { open.style.display = 'none'; }
-      document.getElementById('addcards').classList.remove('hidden');
+      document.getElementById('cardsheet').classList.remove('hidden');
     }
-    function closeAddCards() { document.getElementById('addcards').classList.add('hidden'); }
+    function closeCardSheet() { document.getElementById('cardsheet').classList.add('hidden'); }
 
     // ---- Add sentences (link out to the `sentences` tab) ----
     // Same reasoning as the card importer: the Sheet is the editor, so this is
