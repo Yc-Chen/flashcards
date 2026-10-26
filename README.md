@@ -281,6 +281,7 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 | key | default | what it does |
 |-----|---------|--------------|
 | `target_language` | `nl-NL` | **The language you're studying.** A [BCP-47](https://en.wikipedia.org/wiki/IETF_language_tag) tag — `zh-CN`, `fr-FR`, `de-DE`, `es-ES`, `ja-JP`… |
+| `native_language` | `English` | **The language you think in.** AI explanations and translations come back in it. A plain name (`English`, `Nederlands`, `中文`), not a tag — nothing speaks it. Also in **⚙ Settings**. |
 | `speech_rate` | `0.9` | Speaking speed. `0.5` = slow, `1` = normal. |
 | `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
 | `sentence_gap` | `1.5` | Seconds of silence after each sentence in **🎧 Soak**. `0` = no pause. Also in **⚙ Settings**. |

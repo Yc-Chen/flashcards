@@ -190,6 +190,7 @@ there is nothing to set up and nothing to migrate.
 | key | default | meaning |
 |-----|---------|---------|
 | `target_language` | `nl-NL` | The language being studied. BCP-47 tag. **This is the only thing to change for a non-Dutch deck.** |
+| `native_language` | `English` | The language AI explanations and translations come back in — the owner's, not the one being studied. A plain **name**, not a tag: nothing speaks it, and its only reader is a sentence of prose aimed at a model, where `explain in en-GB` reads like a typo. |
 | `speech_rate` | `0.9` | Speaking speed. |
 | `auto_speak` | `yes` | Speak the example on reveal? |
 | `sentence_gap` | `1.5` | Seconds of silence after each sentence in 🎧 Soak. |
@@ -391,6 +392,47 @@ The copy button is the convenience, not the mechanism: the app is served in a
 cross-origin iframe where a scripted copy can be refused outright (iOS Safari
 most of all), so the textarea stays visible and selectable and the fallback text
 names the manual gesture.
+
+### A paragraph from the words you keep missing
+
+**✨ Make a paragraph from my mistakes** on the home screen builds one prompt
+asking for a short paragraph that uses every word you have been getting wrong.
+It is **copy-only**: there is no paste-back step, nothing is written to any tab,
+and no card is touched. The whole feature is `aiWordsPrompt(window)` returning a
+string, plus a panel to copy it out of.
+
+Drilling shows a word on its own, which is not how anyone meets one. This is the
+cheap way to see twenty of them in use without authoring sentences by hand.
+
+**Three windows**, because "the words I keep getting wrong" means different
+things on different days. `aiWrongWords_(cards, window)`:
+
+| window | rule |
+|---|---|
+| `today` | `last_wrong` is today — the same test the Today's mistakes drill uses |
+| `week` | `last_wrong` within `AI_WORDS_WINDOW_DAYS` (7) |
+| `all` | `computeWeakRanking_`'s pool: still unmastered, and missed at least once ever |
+
+All three skip excluded cards and cards with an empty front, and all three are
+ordered by `rankByTrouble_` — the comparator lifted out of `computeWeakRanking_`
+so the drill and the prompt cannot drift apart. The cap is `AI_WORDS_LIMIT`
+(20), lower than `AI_COPY_LIMIT` because every word has to earn a place in one
+readable paragraph; the list is worst-first, so the cap trims the least
+troublesome. The panel's chooser shows all three counts, and opening it on an
+empty window slides to the first one that has something.
+
+**Each word goes in with its gloss** (`verdom — to flatly refuse`), the first
+non-blank line of `back_side` with its Markdown stripped. This is not padding: a
+model handed a bare list of foreign words quietly guesses at the ones it
+half-knows, and a paragraph that uses your word wrongly is worse than no
+paragraph — you would be practising the error. The example sentence on the next
+line is deliberately left out; it is the thing being replaced.
+
+The prompt asks for the practised words in `_underscores_` and a translation in
+`native_language` underneath. That is this app's own convention (italic spans
+are spoken in `target_language`, the rest is not), so a paragraph that comes
+back in that shape can be pasted into the `sentences` tab by hand and 🎧 Soak
+will read the right half of it. Nothing automates that — it just fits.
 
 ## Authoring your own deck as CSV — [AGENT]
 

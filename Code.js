@@ -118,6 +118,11 @@ var CONFIG_HEADERS = ['key', 'value', 'description'];
 var DEFAULT_CONFIG = [
   ['target_language', 'nl-NL',
     'The language you are studying. BCP-47 tag, e.g. nl-NL, zh-CN, fr-FR, de-DE.'],
+  // A plain NAME, not a BCP-47 tag like target_language above: nothing ever
+  // speaks this one. Its only reader is a sentence of prose aimed at a model,
+  // where “explain in English” works and “explain in en-GB” reads like a typo.
+  ['native_language', 'English',
+    'The language AI explanations and translations come back in — yours, not the one you are studying. A plain name (English, Nederlands, 中文), not a tag.'],
   ['speech_rate', '0.9',
     'Speaking speed. 0.5 = slow, 1 = normal.'],
   ['auto_speak', 'yes',
@@ -417,6 +422,23 @@ var AI_RETRY_PAUSE_MS = 2000;
 // and a small local model truncates a long one.
 var AI_COPY_LIMIT = 40;
 
+// Words in one "write me a paragraph" prompt. Lower than AI_COPY_LIMIT on
+// purpose: every word has to earn a place in a single readable paragraph, and
+// twenty is already a long one. The list is worst-first, so the cap trims the
+// least troublesome.
+var AI_WORDS_LIMIT = 20;
+var AI_WORDS_WINDOW_DAYS = 7;
+
+/**
+ * The language the owner thinks in, for prompts that have to explain something.
+ * Falls back to English because that is what the hardcoded word used to be, so
+ * a Sheet that predates the setting behaves exactly as it did.
+ */
+function nativeLanguage_(config) {
+  var cfg = config || readConfig_();
+  return String(cfg.native_language || 'English').trim() || 'English';
+}
+
 /**
  * Reports an outcome without blocking the execution.
  *
@@ -593,6 +615,7 @@ function aiFillCards() {
   var cfg = readConfig_();
   var ai = aiConfig_(cfg);
   var lang = String(cfg.target_language || 'nl-NL').trim();
+  var native = nativeLanguage_(cfg);
   var data = readCards_();
   var targets = aiTargets_(data.cards);
   var started = Date.now();
@@ -607,7 +630,7 @@ function aiFillCards() {
     var fields;
     try {
       fields = aiParseFields_(aiCall_(ai,
-        aiSystemPrompt_(lang), aiUserPrompt_(target)));
+        aiSystemPrompt_(lang, native), aiUserPrompt_(target)));
     } catch (err) {
       // A bad key or a wrong endpoint fails identically on every card, so stop
       // rather than spend fifteen requests proving it.
@@ -667,11 +690,13 @@ function aiFillCards() {
  *     when there are more cards than one prompt should carry.
  */
 function aiPrompt() {
-  var lang = String(readConfig_().target_language || 'nl-NL').trim();
+  var cfg = readConfig_();
+  var lang = String(cfg.target_language || 'nl-NL').trim();
+  var native = nativeLanguage_(cfg);
   var targets = aiTargets_(readCards_().cards);
   var batch = targets.slice(0, AI_COPY_LIMIT);
   return {
-    prompt: batch.length ? aiBatchPrompt_(batch, lang) : '',
+    prompt: batch.length ? aiBatchPrompt_(batch, lang, native) : '',
     count: batch.length,
     total: targets.length,
     limit: AI_COPY_LIMIT
@@ -839,17 +864,21 @@ function aiWriteCard_(sheet, change, opts) {
 /**
  * The deck's own conventions, stated once, as the model's instructions.
  *
+ * `native` is the language the learner thinks in — the `native_language`
+ * config row. It used to be the hardcoded word “English”, which was a guess
+ * about the owner dressed up as a constant.
+ *
  * `batch` switches the reply shape only: the API route sends one card per
  * request and wants one object back, while the copy-out route puts every card
  * in one prompt and needs each answer labelled with the row it belongs to.
  * Everything below the shape is the same text either way, because it describes
  * the deck rather than the transport.
  */
-function aiSystemPrompt_(lang, batch) {
+function aiSystemPrompt_(lang, native, batch) {
   return [
     'You write flashcards for a spaced-repetition app. The learner is studying ' +
       'the language with BCP-47 tag ' + lang + '. Their prompts are in that ' +
-      'language; explain in English.',
+      'language; explain in ' + native + '.',
     ''
   ].concat(batch ? [
     'Answer with one JSON array and nothing else, no code fence:',
@@ -871,8 +900,8 @@ function aiSystemPrompt_(lang, batch) {
       'its own line, in _underscore italics_, and nothing else. The app speaks ' +
       'italic spans aloud in ' + lang + ' and never speaks the bold gloss, so ' +
       'an un-italicised example is one the learner never hears, and an ' +
-      'italicised English gloss is read aloud in the wrong language. If a word ' +
-      'has two unrelated senses, take the more common one.',
+      'italicised ' + native + ' gloss is read aloud in the wrong language. ' +
+      'If a word has two unrelated senses, take the more common one.',
     '',
     'front_side is the prompt the learner sees, and you return it ONLY for a ' +
       'card marked "new", and only if it needs tidying — an article or a ' +
@@ -920,14 +949,137 @@ function aiUserPrompt_(target, num) {
  * duplicate values are both legal, and "Renumber id column" rewrites the lot),
  * while the row is what a write-back actually addresses.
  */
-function aiBatchPrompt_(targets, lang) {
-  var blocks = [aiSystemPrompt_(lang, true), ''];
+function aiBatchPrompt_(targets, lang, native) {
+  var blocks = [aiSystemPrompt_(lang, native, true), ''];
   blocks.push(targets.length === 1 ? 'The card:' : 'The ' + targets.length + ' cards:');
   for (var i = 0; i < targets.length; i++) {
     blocks.push('');
     blocks.push(aiUserPrompt_(targets[i], targets[i].card._row));
   }
   return blocks.join('\n');
+}
+
+// ---- The word-list prompt: see the words you keep missing in one paragraph --
+// Drilling shows a word alone, which is not how anyone meets one. This collects
+// the words you have been getting wrong and asks for a single paragraph that
+// uses all of them. Copy-only — there is nothing to paste back and nothing is
+// ever written — so the whole feature is one function that builds a string.
+
+/**
+ * The cards worth putting in a paragraph, worst first.
+ *
+ * `window` picks the pool, because "the words I keep getting wrong" means
+ * different things on different days:
+ *   today — missed today, the same test the Today's mistakes drill uses
+ *   week  — missed in the last AI_WORDS_WINDOW_DAYS days
+ *   all   — computeWeakRanking_'s pool: still unmastered and missed at least
+ *           once, ever
+ * `last_wrong` is a 'yyyy-MM-dd' string that only gradeCard writes and nothing
+ * clears, so the two date windows are a string compare.
+ * @return {Array<Object>} Cards, ranked by rankByTrouble_.
+ */
+function aiWrongWords_(cards, window) {
+  if (window === 'all') {
+    return computeWeakRanking_(cards).filter(aiUsableWord_);
+  }
+  var since = window === 'today' ? todayStr_() : addDaysStr_(-(AI_WORDS_WINDOW_DAYS - 1));
+  var pool = [];
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    if (!aiUsableWord_(card)) continue;
+    var missed = normDate_(card.last_wrong);
+    if (!missed || missed < since) continue;
+    pool.push(card);
+  }
+  return rankByTrouble_(pool);
+}
+
+/** Excluded cards are out of practice entirely; an empty front is not a word. */
+function aiUsableWord_(card) {
+  return String(card.exclude || '').trim() === '' &&
+    String(card.front_side || '').trim() !== '';
+}
+
+/**
+ * The gloss to send with a word: the first non-blank line of `back_side`.
+ *
+ * By this deck's convention that line is the bold gloss and the line under it
+ * is an example sentence — which is the very thing being asked for, so sending
+ * it would invite the model to hand back what it was given. A word with no
+ * answer yet goes in bare rather than being dropped; a paragraph is a fine
+ * place to meet it.
+ */
+function aiGloss_(card) {
+  var lines = String(card.back_side == null ? '' : card.back_side).split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    // The card's Markdown is for the app's renderer; in a prompt it is noise
+    // the model may well copy back into the paragraph.
+    if (line) return line.replace(/\*\*|__|==|[*_`]/g, '').trim();
+  }
+  return '';
+}
+
+/**
+ * The prompt. Says what to write, how to mark it up, and what each word means.
+ *
+ * The glosses are not padding: a model handed a bare list of foreign words will
+ * quietly guess at the ones it half-knows, and a paragraph that uses your word
+ * wrongly is worse than no paragraph — you would be practising the error.
+ */
+function aiWordsPromptText_(cards, lang, native) {
+  var lines = [
+    'Write one short paragraph in the language with BCP-47 tag ' + lang + '.',
+    '',
+    'It must use every word in the list below, in a way that fits that word\'s ' +
+      'real meaning and register. Keep it to five or six sentences and let it ' +
+      'be one connected little scene or argument, not a list of sentences that ' +
+      'happen to contain the words. Inflect them as the grammar needs — the ' +
+      'point is to meet them in use, not to see the dictionary form again.',
+    '',
+    'Wrap every word from the list in _underscores_ where it appears, and ' +
+      'nothing else. Then, under the paragraph, give a plain ' + native + ' ' +
+      'translation of it, with no underscores at all.',
+    '',
+    'These are words I keep getting wrong, with what each one means:'
+  ];
+  for (var i = 0; i < cards.length; i++) {
+    var gloss = aiGloss_(cards[i]);
+    lines.push('- ' + String(cards[i].front_side).trim() + (gloss ? ' — ' + gloss : ''));
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Builds the word-list prompt for one window. Client-callable, so no `_`.
+ *
+ * `counts` always comes back for all three windows: the panel labels its
+ * chooser with them, and a window that would be empty should say so before you
+ * pick it rather than after.
+ * @param {string} window 'today' | 'week' | 'all'. Anything else means 'all'.
+ * @return {Object} { prompt, window, count, total, limit, counts }.
+ */
+function aiWordsPrompt(window) {
+  var pick = (window === 'today' || window === 'week') ? window : 'all';
+  var cfg = readConfig_();
+  var lang = String(cfg.target_language || 'nl-NL').trim();
+  var native = nativeLanguage_(cfg);
+  var cards = readCards_().cards;
+
+  var pool = aiWrongWords_(cards, pick);
+  var batch = pool.slice(0, AI_WORDS_LIMIT);
+  return {
+    prompt: batch.length ? aiWordsPromptText_(batch, lang, native) : '',
+    window: pick,
+    count: batch.length,
+    total: pool.length,
+    limit: AI_WORDS_LIMIT,
+    counts: {
+      today: aiWrongWords_(cards, 'today').length,
+      week: aiWrongWords_(cards, 'week').length,
+      all: aiWrongWords_(cards, 'all').length
+    }
+  };
 }
 
 /**
@@ -1387,8 +1539,8 @@ function readConfig_() {
 // Config keys the app UI may write. `webapp_url` is deliberately excluded — it
 // is deploy/fork plumbing, and letting the in-app Settings screen change it would
 // be a footgun (point your own app at nowhere). It stays Sheet-only.
-var CLIENT_CONFIG_KEYS = ['target_language', 'speech_rate', 'auto_speak',
-  'sentence_gap', 'sentence_repeat', 'update_check', 'daily_limit'];
+var CLIENT_CONFIG_KEYS = ['target_language', 'native_language', 'speech_rate',
+  'auto_speak', 'sentence_gap', 'sentence_repeat', 'update_check', 'daily_limit'];
 
 /**
  * Writes one setting from the app's Settings screen. Whitelisted so the client
@@ -1920,18 +2072,37 @@ function computeWeakRanking_(cards) {
     var right = Number(card.right) || 0;
     var wrong = Number(card.wrong) || 0;
     if (wrong === 0) continue; // never missed: covers brand-new and answered-only-right
+    ranked.push(card);
+  }
+  return rankByTrouble_(ranked);
+}
+
+/**
+ * Orders cards worst-first: never-answered-right before ever-right, then most
+ * recently missed, then the most balanced right/wrong record (a card you get
+ * half right is shakier than one you have missed once).
+ *
+ * Split out of computeWeakRanking_ so the AI word-list prompt can order its own
+ * pools — which have different membership rules — by the same measure. Sorts in
+ * place and returns the array; `_tier`, `_lastWrong` and `_score` are transient
+ * and never reach the client (toClientCard_ whitelists).
+ */
+function rankByTrouble_(cards) {
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    var right = Number(card.right) || 0;
+    var wrong = Number(card.wrong) || 0;
     card._tier = right === 0 ? 1 : 2;
     card._lastWrong = normDate_(card.last_wrong); // '' when never recorded → sorts oldest
     card._score = Math.min(right, wrong);         // tier-2 balance; 0 for tier 1
-    ranked.push(card);
   }
-  ranked.sort(function (a, b) {
+  cards.sort(function (a, b) {
     if (a._tier !== b._tier) return a._tier - b._tier;          // tier 1 before tier 2
     if (a._lastWrong !== b._lastWrong)                          // most recently missed first
       return a._lastWrong < b._lastWrong ? 1 : -1;
     return b._score - a._score;                                // more balanced first (tier 2)
   });
-  return ranked;
+  return cards;
 }
 
 /**
