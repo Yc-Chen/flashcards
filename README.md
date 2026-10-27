@@ -15,6 +15,11 @@ Sheet *is* the database, and Google Apps Script serves the app.
   tense and clause order rather than testing yourself.
 - **In-app tools:** edit a card, flag it for later, or exclude a bad card — all
   saved straight to the Sheet.
+- **✨ AI assist:** have an AI write the answers on cards you haven't filled in
+  yet or have flagged as wrong — with **no API key**, using whatever AI you
+  already have, and a before/after preview of every card. It can also turn the
+  words you keep missing into a paragraph to read. See
+  [Filling cards with AI](#filling-cards-with-ai-).
 
 > This repo is a **template** — deploy your own copy against your own Google
 > account and Sheet (see below). It ships with a small Dutch A1/A2 starter deck,
@@ -54,6 +59,11 @@ the Sheet *and* the app in one click, no CLI. See [Deploy your own](#deploy-your
   reorganize columns whenever you want — from the Sheet on any device, or from
   inside the app while you study. No proprietary format, no export/re-import
   dance; the spreadsheet *is* the database.
+- **Bring your own AI, or none.** The AI help is a prompt you copy and a reply
+  you paste back, so it works with the chat subscription or local model you
+  already have — there is no API key to buy, no AI billing attached to your
+  cards, and nothing is sent anywhere unless you paste it there yourself. Skip
+  it entirely and the app is unchanged.
 - **Quiet by design — no notifications, no gamification.** It will never buzz
   your phone with reminders you're already drowning in, and there are no
   streaks, badges, XP, or leaderboards engineered to keep you hooked. It simply
@@ -205,7 +215,8 @@ Each card has four tools in the progress row (top right):
   Sheet** — written back immediately. Works on phone and laptop.
 - **⚑ Flag** — one tap marks the card (writes `⚑` to its `flag` column) so you
   can fix it later without stopping to type. Tap again to un-flag. Filter the
-  `flag` column in the Sheet to find flagged cards.
+  `flag` column in the Sheet to find flagged cards — or let
+  [✨ AI assist](#filling-cards-with-ai-) rewrite them for you.
 - **🚫 Exclude** — drops a bad/low-quality card from all future practice
   (soft-delete: writes `x` to its `exclude` column) and skips to the next card.
   Reversible — clear the `exclude` cell to bring it back, or filter that column
@@ -219,7 +230,7 @@ Each card has four tools in the progress row (top right):
 | `type` | optional tag/category (e.g. `vocab`, `grammar`) — shown on the card badge |
 | `front_side` | front of the card — **Markdown** |
 | `back_side` | back of the card (the answer) — **Markdown** |
-| `notes` | optional hint shown under the answer — **Markdown** |
+| `notes` | optional hint shown under the answer — **Markdown**. Yours, not the AI's: a fill never writes one and clears it by default |
 | `box` | Leitner box 1–5. **Leave blank = new card** |
 | `due` | next review date `YYYY-MM-DD` (managed by the app) |
 | `last_seen`, `right`, `wrong` | stats (managed by the app) |
@@ -246,6 +257,10 @@ refers to a card by its id.
 Add a row to the `cards` tab (laptop or phone). Fill `front_side`, `back_side`,
 optionally `type` and `notes`. **Leave `box`/`due` empty** so it appears as a
 new card. You can hand-tune proficiency any time by editing `box` and `due`.
+
+Or write only the word, leave `back_side` blank, and have
+[✨ AI assist](#filling-cards-with-ai-) write the answer for you — a card with
+no answer yet is exactly what it looks for.
 
 To bulk-add a whole deck from a CSV, tap **✏️ Edit or import cards in the Sheet**
 on the home screen — it walks you through Google Sheets' own **File → Import** (a
@@ -289,7 +304,140 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 | `daily_limit` | `80` | Most cards one **day** will serve you, across however many sittings — cards you already graded today count against it. `0` = no limit. Also in **⚙ Settings**. |
 | `box1_new_gate` | `20` | New cards wait while box 1 holds this many or more. Raise it to meet new words sooner, lower it to clear the shaky pile first. `0` = never introduce new cards. Sheet-only. |
 | `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). Also in **⚙ Settings**. `yes` / `no` |
+| `ai_endpoint` | Google's Gemini URL | Where the Sheet's **AI assist** menu sends a card. Gemini only — see [Filling cards with AI](#filling-cards-with-ai-). The app's own route uses no endpoint. Sheet-only. |
+| `ai_model` | `gemini-flash-latest` | Which Gemini model that menu asks. Ignored when `ai_endpoint` already names one in its path. Sheet-only. |
 | `webapp_url` | *(blank)* | The `/exec` link of your deployment, used by **🎴 Flashcards → Open the app ↗**. Blank = auto-detect. |
+
+## Filling cards with AI ✨
+
+Keeping a deck is mostly a writing job: a card needs a gloss, maybe a register
+note, an example sentence worth hearing. **✨ Fill cards with AI** on the home
+screen does that writing for the cards that need it, and
+**✨ Make a paragraph from my mistakes** turns the words you keep missing into
+something to read.
+
+Both are optional, both are off until you tap them, and neither sends anything
+anywhere by itself.
+
+### Which cards qualify
+
+The ✨ row appears on the home screen only when there is something for it to do,
+and says what it found. Two kinds of card count:
+
+- **No answer yet** — a new card (blank `box`) with an empty `back_side`. Type a
+  word into the Sheet, leave the rest blank, and it becomes a target.
+- **Flagged** (`⚑`) — you tapped ⚑ while practising because the answer was
+  wrong, thin, or missing its example.
+
+What gets written, and nothing else:
+
+| column | when |
+|--------|------|
+| `back_side` | always — this is the field being asked for |
+| `front_side` | only on a card that is **still new**, and only if the AI returns one |
+| `notes` | **cleared**, unless you keep them |
+| `flag` | **cleared**, unless you keep the flags |
+
+`box`, `due`, `last_seen`, `right` and `wrong` are never touched, so **no card's
+schedule moves**: a fill never costs you a review or hands back a card you had
+already learned.
+
+Two of those rows are deliberate:
+
+- **Flags and notes are cleared.** Both are your mark that a card needed work,
+  and the work has just been done — left in place, the card would come back as
+  a target forever. Two tick boxes in the preview keep either one for the whole
+  batch.
+- **A studied card's front is left alone.** A blank `box` means you have never
+  been asked this card, so tidying its prompt (an article to strip, a typo)
+  costs nothing. Once you have been retrieving against that exact prompt,
+  changing it would alter what you've been practising rather than improve it —
+  so a new front is ignored there.
+
+### The app's route — copy out, paste back, read the preview
+
+This is the route that needs no API key, no endpoint and no extra account:
+**you** are the connection to the AI.
+
+1. **Copy the prompt.** Tap the ✨ row on the home screen. It lists up to 40 of
+   your cards and asks for the answers back as JSON. Nothing leaves your phone
+   at this step.
+2. **Paste it into whatever AI you have** — a chat subscription, a model running
+   on your own machine, anything with a text box — and copy the reply.
+3. **Paste the reply back and read the preview.** Every card is shown with its
+   old answer and the new one, your own note in full, and a tick box. **Untick
+   anything you would rather not take**: it keeps the answer it has, keeps its
+   flag, and is still a target next time. Then press **Write *n* cards**.
+
+Parsing the reply is deliberately forgiving, because the text has been through a
+chat window — a code fence, a line of commentary, an array or an object keyed by
+card number all work. The one thing it can't do without is the **card number**
+on each answer, because that's what addresses the row.
+
+Nothing is written until you press the button, and what gets written comes only
+from the reply you pasted.
+
+### The Sheet's route — automatic, with a Gemini key
+
+**🎴 Flashcards → AI assist → Fill in new + flagged cards** does the same job
+without you in the middle, by calling Google's Gemini API with a key of your
+own. It's the quicker route for a big batch, and **it has no preview** — it
+writes each answer as it arrives. Setting it up:
+
+1. **AI assist → Set the API key…** with a key from
+   <https://aistudio.google.com/apikey>. It goes into the script's own
+   properties, **not** into a config cell: a Sheet gets copied, exported and
+   shared, and a key in a cell travels with it. (The flip side — a copy of your
+   Sheet starts with no key and sets its own.)
+2. **The endpoint and model** are the `ai_endpoint` / `ai_model` config rows,
+   and the defaults need no editing. **Gemini only**, on purpose: every API has
+   its own request shape, its own way of carrying the key and its own way of
+   reporting a refusal, so each extra provider is a code path that can only be
+   tested on its own — and Gemini is the one with a free tier, which is what
+   matters if you haven't bought anything.
+3. **AI assist → Test the connection** — one cheap round-trip that names the
+   key, endpoint, model or format problem if there is one.
+
+> **A chat subscription is not an API key.** Gemini Advanced — like Claude Pro
+> or ChatGPT Plus — doesn't include API access; that has its own key, with its
+> own free tier. If you have a subscription and no key, the app's route above is
+> the one that works with it.
+
+One card is one request, and each is written as its answer arrives, so a failure
+costs that card and nothing else. Apps Script gives a menu action about six
+minutes, so a run stops at 15 cards or four minutes and reports what's left —
+run it again to carry on.
+
+> This is the only part of the app that makes an outside request, so it needs a
+> scope the earlier versions didn't — if you updated an existing copy, the next
+> menu action asks you to authorize the script once more. Expected, once.
+
+### ✨ A paragraph from your mistakes
+
+Drilling shows a word on its own, which is not how anyone ever meets one.
+**✨ Make a paragraph from my mistakes** collects the words you've been getting
+wrong and builds one prompt asking for a short paragraph that uses all of them.
+
+It is **copy-only**: there's no paste-back step, nothing is written to any tab,
+and no card is touched. You read the paragraph wherever you pasted the prompt.
+
+Pick the window — **Today**, **Last 7 days**, or **All time** (everything still
+unmastered that you've missed at least once) — and the panel shows all three
+counts, so you can see which one has something in it. Up to 20 words, worst
+first, so a long list loses its least troublesome end.
+
+Each word goes in **with its gloss** (`verdom — to flatly refuse`), taken from
+the first line of its answer. That isn't padding: an AI handed a bare list of
+foreign words quietly guesses at the ones it half-knows, and a paragraph that
+uses your word wrongly is worse than no paragraph — you'd be practising the
+mistake.
+
+The prompt asks for the practised words in `_italics_` with a translation
+underneath, which is this app's own convention (see
+[Hearing your cards](#hearing-your-cards-)). So a paragraph that comes back in
+that shape can be pasted straight into the [`sentences`](#the-sentences-tab) tab
+and **🎧 Soak** will read the right half of it. Nothing automates that — it
+just fits.
 
 ## Hearing your cards 🔊
 
@@ -422,7 +570,7 @@ knows roughly how many people use the app. Full disclosure of what it involves:
 
 | file | purpose |
 |------|---------|
-| `Code.js` | backend: `doGet`, Leitner logic, sheet I/O, the `getSession`/`getWeakCards`/`gradeCard`/`updateCard` API |
+| `Code.js` | backend: `doGet`, Leitner logic, sheet I/O, the `getSession`/`getWeakCards`/`gradeCard`/`updateCard` API, and the `ai*` functions behind [AI assist](#filling-cards-with-ai-) |
 | `Index.html` | the entire UI — inline CSS/JS + a small Markdown renderer |
 | `decks/` | starter decks as plain CSV — load one via **File → Import** (see [Adding your own cards](#adding-your-own-cards)) |
 | `appsscript.json` | Apps Script manifest (timezone + web-app access) |
