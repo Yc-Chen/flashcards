@@ -191,12 +191,13 @@ there is nothing to set up and nothing to migrate.
 |-----|---------|---------|
 | `target_language` | `nl-NL` | The language being studied. BCP-47 tag. **This is the only thing to change for a non-Dutch deck.** |
 | `native_language` | `English` | The language AI explanations and translations come back in — the owner's, not the one being studied. A plain **name**, not a tag: nothing speaks it, and its only reader is a sentence of prose aimed at a model, where `explain in en-GB` reads like a typo. |
-| `speech_rate` | `0.9` | Speaking speed. |
+| `speech_rate` | `0.9` | Speaking speed — cards and 🎧 Soak alike. Lives under 🎧 Soak in ⚙ Settings. |
 | `auto_speak` | `yes` | Speak the example on reveal? |
 | `sentence_gap` | `1.5` | Seconds of silence after each sentence in 🎧 Soak. |
 | `sentence_repeat` | `1` | Times 🎧 Soak speaks each sentence before moving on. |
 | `daily_limit` | `80` | Most cards one day serves, across all sittings; cards already graded today count against it. `0` = no limit. |
-| `box1_new_gate` | `20` | New cards wait while box 1 holds this many cards or more, checked after the box-1/box-2 block. `0` = never introduce new cards (box 1 can't hold fewer than 0). Sheet-only — not in ⚙ Settings. |
+| `box1_new_gate` | `20` | New cards wait while box 1 holds this many cards or more, checked after the box-1/box-2 block. `0` = never introduce new cards (box 1 can't hold fewer than 0). Also in ⚙ Settings. |
+| `new_card_order` | `random` | Which never-studied cards a session picks up first: `random` or `recent` (newest `added` first). Also in ⚙ Settings. |
 | `update_check` | `yes` | Daily anonymous version-check ping (hashed copy id + app version) to the author's collector endpoint. `no` disables it; also toggleable in the app's ⚙ Settings. |
 | `ai_endpoint` | `https://generativelanguage.googleapis.com/v1beta` | Where **AI assist** sends a card. Google's Gemini API only; see "AI assist" below. Sheet-only. |
 | `ai_model` | `gemini-flash-latest` | Which Gemini model. Ignored when `ai_endpoint` already names one in its path. Sheet-only. |

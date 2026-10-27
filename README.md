@@ -286,8 +286,11 @@ the first letter of باب without breaking the join. Put line breaks in a cell 
 ## Settings (`config` tab)
 
 Most of these you can change **right in the app** — tap the **⚙** in the top-right,
-pick your language (the list is built from the voices your device actually has),
-speed and auto-speak, and Save. No need to touch the Sheet.
+pick the language you're studying (the list is built from the voices your device
+actually has) and your own, how much a day serves you, and the **🎧 Soak**
+playback, then Save. No need to touch the Sheet. The three that stay here are the
+AI endpoint and model (they pair with a key that can only live in Script
+Properties) and `webapp_url`.
 
 Under the hood they live in a second tab called **`config`**, as `key` / `value`
 rows, so you can also edit a cell and reload. The tab is created automatically with
@@ -297,12 +300,13 @@ sensible defaults the first time the app runs, so there's nothing to set up.
 |-----|---------|--------------|
 | `target_language` | `nl-NL` | **The language you're studying.** A [BCP-47](https://en.wikipedia.org/wiki/IETF_language_tag) tag — `zh-CN`, `fr-FR`, `de-DE`, `es-ES`, `ja-JP`… |
 | `native_language` | `English` | **The language you think in.** AI explanations and translations come back in it. A plain name (`English`, `Nederlands`, `中文`), not a tag — nothing speaks it. Also in **⚙ Settings**. |
-| `speech_rate` | `0.9` | Speaking speed. `0.5` = slow, `1` = normal. |
+| `speech_rate` | `0.9` | Speaking speed, on cards and in **🎧 Soak** alike. `0.5` = slow, `1` = normal. Also in **⚙ Settings**. |
 | `auto_speak` | `yes` | Speak the example automatically when you reveal an answer? `yes` / `no` |
 | `sentence_gap` | `1.5` | Seconds of silence after each sentence in **🎧 Soak**. `0` = no pause. Also in **⚙ Settings**. |
 | `sentence_repeat` | `1` | How many times **🎧 Soak** speaks each sentence before moving on. Also in **⚙ Settings**. |
 | `daily_limit` | `80` | Most cards one **day** will serve you, across however many sittings — cards you already graded today count against it. `0` = no limit. Also in **⚙ Settings**. |
-| `box1_new_gate` | `20` | New cards wait while box 1 holds this many or more. Raise it to meet new words sooner, lower it to clear the shaky pile first. `0` = never introduce new cards. Sheet-only. |
+| `box1_new_gate` | `20` | New cards wait while box 1 holds this many or more. Raise it to meet new words sooner, lower it to clear the shaky pile first. `0` = never introduce new cards. Also in **⚙ Settings**. |
+| `new_card_order` | `random` | Which never-studied cards a session picks up first: `random` (shuffle the deck) or `recent` (newest `added` date first). Also in **⚙ Settings**. |
 | `update_check` | `yes` | Check for app updates on startup? Sends one anonymous ping a day — see [Updates](#updates--the-version-check). Also in **⚙ Settings**. `yes` / `no` |
 | `ai_endpoint` | Google's Gemini URL | Where the Sheet's **AI assist** menu sends a card. Gemini only — see [Filling cards with AI](#filling-cards-with-ai-). The app's own route uses no endpoint. Sheet-only. |
 | `ai_model` | `gemini-flash-latest` | Which Gemini model that menu asks. Ignored when `ai_endpoint` already names one in its path. Sheet-only. |

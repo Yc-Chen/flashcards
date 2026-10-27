@@ -1550,11 +1550,15 @@ function readConfig_() {
   return cfg;
 }
 
-// Config keys the app UI may write. `webapp_url` is deliberately excluded — it
-// is deploy/fork plumbing, and letting the in-app Settings screen change it would
-// be a footgun (point your own app at nowhere). It stays Sheet-only.
+// Config keys the app UI may write. Three are deliberately excluded and stay
+// Sheet-only: `webapp_url`, because it is deploy/fork plumbing and an in-app
+// screen that can point your own app at nowhere is a footgun; `ai_endpoint` and
+// `ai_model`, because they only matter to the Sheet menu's Gemini route, whose
+// key can only live in Script Properties — half a setup screen is worse than
+// none, so ⚙ Settings links at the config tab instead.
 var CLIENT_CONFIG_KEYS = ['target_language', 'native_language', 'speech_rate',
-  'auto_speak', 'sentence_gap', 'sentence_repeat', 'update_check', 'daily_limit'];
+  'auto_speak', 'sentence_gap', 'sentence_repeat', 'update_check', 'daily_limit',
+  'box1_new_gate', 'new_card_order'];
 
 /**
  * Writes one setting from the app's Settings screen. Whitelisted so the client

@@ -266,6 +266,12 @@
     #aifill .panel > div { display: flex; flex-direction: column; gap: 10px; }
     .overlay .row label { margin-top: 0; }
     .overlay .section { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 4px; }
+    /* A section with a name. The ones that do not have one (the Sheet door,
+       the update switch) carry a single idea, where a heading would be noise. */
+    .overlay .section-title {
+      font-size: 13px; font-weight: 700; color: var(--text);
+      letter-spacing: 0.2px; margin: 6px 0 10px;
+    }
     .overlay .note { color: var(--muted); font-size: 12.5px; line-height: 1.45; margin: 2px 0 0; }
     .overlay .steps { margin: 4px 0 0; padding-left: 1.2em; color: var(--muted); font-size: 14px; line-height: 1.5; }
     .overlay .steps li { margin: 4px 0; }
@@ -485,21 +491,39 @@
   <div id="settings" class="overlay hidden" onclick="if(event.target===this) closeSettings()">
     <div class="panel">
       <h3>Settings</h3>
-      <label for="set-lang">Language spoken aloud</label>
+      <label for="set-lang">Language I’m studying</label>
       <select id="set-lang" onchange="onLangSelect('set-lang','set-lang-other')"></select>
       <input type="text" id="set-lang-other" class="hidden" placeholder="Language tag, e.g. pt-BR">
-      <label for="set-rate" style="margin-top:12px">Speaking speed</label>
-      <select id="set-rate">
-        <option value="0.7">Slow</option>
-        <option value="0.9">Normal</option>
-        <option value="1.1">Fast</option>
+      <p class="note">Spoken aloud on cards and in 🎧 Soak.</p>
+      <!-- Deliberately next to the language above, not in a section of its own:
+           the two together are "the pair of languages this copy works in", and
+           the only thing the old AI section held was this one picker. -->
+      <label for="set-native" style="margin-top:12px">My own language</label>
+      <select id="set-native" onchange="onLangSelect('set-native','set-native-other')">
+        <option value="English">English</option>
+        <option value="Nederlands">Nederlands (Dutch)</option>
+        <option value="Deutsch">Deutsch (German)</option>
+        <option value="Français">Français (French)</option>
+        <option value="Español">Español (Spanish)</option>
+        <option value="Italiano">Italiano (Italian)</option>
+        <option value="Português">Português (Portuguese)</option>
+        <option value="Polski">Polski (Polish)</option>
+        <option value="中文">中文 (Chinese)</option>
+        <option value="日本語">日本語 (Japanese)</option>
+        <option value="한국어">한국어 (Korean)</option>
+        <option value="العربية">العربية (Arabic)</option>
+        <option value="__other__">Other…</option>
       </select>
+      <input type="text" id="set-native-other" class="hidden" placeholder="Language name, e.g. Svenska">
+      <p class="note">AI explanations and translations come back in this one, not
+        the one you are studying. Nothing ever speaks it.</p>
       <div class="row">
         <label for="set-autospeak">Speak the example when I reveal an answer</label>
         <input type="checkbox" id="set-autospeak">
       </div>
 
       <div class="section">
+        <p class="section-title">How much a day</p>
         <label for="set-daily">Most cards in a day</label>
         <select id="set-daily">
           <option value="0">No limit</option>
@@ -515,10 +539,38 @@
           Boxes 1 and 2 are always served first, so what a limit leaves for
           tomorrow is your steadiest material.
         </p>
+        <label for="set-gate" style="margin-top:12px">New cards wait until box 1 is under</label>
+        <select id="set-gate">
+          <option value="0">Never introduce new cards</option>
+          <option value="5">5 cards</option>
+          <option value="10">10 cards</option>
+          <option value="20">20 cards</option>
+          <option value="30">30 cards</option>
+          <option value="50">50 cards</option>
+        </select>
+        <p class="note">
+          Box 1 is the shaky pile. While it holds this many or more, new cards
+          keep waiting — checked after the box-1/box-2 block, so a sitting that
+          clears box 1 still earns them.
+        </p>
+        <label for="set-neworder" style="margin-top:12px">Which new cards come first</label>
+        <select id="set-neworder">
+          <option value="random">Random</option>
+          <option value="recent">Newest added first</option>
+        </select>
+        <p class="note">Which of your never-studied cards get picked up first.</p>
       </div>
 
       <div class="section">
-        <label for="set-gap">Pause after each sentence <span class="hint">🎧 Soak</span></label>
+        <p class="section-title">🎧 Soak</p>
+        <label for="set-rate">Speaking speed</label>
+        <select id="set-rate">
+          <option value="0.7">Slow</option>
+          <option value="0.9">Normal</option>
+          <option value="1.1">Fast</option>
+        </select>
+        <p class="note">Also the speed cards are read at — there is one voice.</p>
+        <label for="set-gap" style="margin-top:12px">Pause after each sentence</label>
         <select id="set-gap">
           <option value="0.5">Short — 0.5 seconds</option>
           <option value="1">1 second</option>
@@ -534,6 +586,14 @@
         </select>
       </div>
 
+      <!-- Everything this screen does not offer. The Gemini route’s key lives in
+           Script Properties and its endpoint and model in the config tab, so the
+           honest thing here is a door rather than a duplicate of them. -->
+      <div class="section">
+        <p class="note">The AI key, endpoint and model live in the Sheet.</p>
+        <a id="set-config-link" class="sheet-link" href="#" target="_blank" rel="noopener">⚙️ Open the config tab ↗</a>
+      </div>
+
       <div class="section" id="set-update-wrap">
         <div class="row">
           <label for="set-updatecheck">Tell me when an update is available</label>
@@ -541,45 +601,10 @@
         </div>
         <p class="note">
           Checks once a day for a newer version of the app. It sends only the
-          version you're running and an unrecognizable fingerprint of this copy
-          — never your cards, account or study data. It's also how the author
+          version you’re running and an unrecognizable fingerprint of this copy
+          — never your cards, account or study data. It’s also how the author
           counts users; switch it off and nothing is sent.
         </p>
-      </div>
-
-      <div class="section">
-        <label for="set-native">AI</label>
-        <p class="note" style="margin-bottom:8px">Explanations and translations come
-          back in the language you pick here — yours, not the one you are studying.</p>
-        <select id="set-native" onchange="onLangSelect('set-native','set-native-other')">
-          <option value="English">English</option>
-          <option value="Nederlands">Nederlands (Dutch)</option>
-          <option value="Deutsch">Deutsch (German)</option>
-          <option value="Français">Français (French)</option>
-          <option value="Español">Español (Spanish)</option>
-          <option value="Italiano">Italiano (Italian)</option>
-          <option value="Português">Português (Portuguese)</option>
-          <option value="Polski">Polski (Polish)</option>
-          <option value="中文">中文 (Chinese)</option>
-          <option value="日本語">日本語 (Japanese)</option>
-          <option value="한국어">한국어 (Korean)</option>
-          <option value="العربية">العربية (Arabic)</option>
-          <option value="__other__">Other…</option>
-        </select>
-        <input type="text" id="set-native-other" class="hidden" placeholder="Language name, e.g. Svenska">
-        <p class="note">
-          <b>✨ Fill cards with AI</b> on the home screen writes the answer on cards
-          that have none, and rewrites the ones you’ve flagged. It hands you the
-          prompt to paste into whatever AI you already have — a chat
-          subscription, a model on your own machine — takes the reply back, and
-          shows you every change before anything is written. No key needed.
-        </p>
-        <p class="note">
-          The Sheet can also do it automatically — 🎴 Flashcards → AI assist —
-          with a Gemini API key of your own. That route has no preview, and the
-          key, the endpoint and the model are set there rather than here.
-        </p>
-        <a id="set-config-link" class="sheet-link" href="#" target="_blank" rel="noopener">⚙️ Open the config tab ↗</a>
       </div>
 
       <div class="editor-msg" id="settings-msg"></div>
@@ -896,7 +921,11 @@
       if (!spent && typeof data.newToday === 'number' && data.newToday >= data.newPerDay) {
         bits.push(data.newToday + ' new cards already today');
       } else if (!spent && typeof data.box1Count === 'number' && data.box1Count >= data.newGate) {
-        bits.push('new cards wait until box 1 is under ' + data.newGate);
+        // A gate of 0 is "never", not "wait until box 1 is under 0" — box 1
+        // cannot hold fewer than none, so the wait would never end.
+        bits.push(data.newGate === 0
+          ? 'new cards are switched off'
+          : 'new cards wait until box 1 is under ' + data.newGate);
       }
       var dl = document.getElementById('daily-line');
       dl.textContent = bits.join(' · ');
@@ -2057,6 +2086,16 @@
       var capPick = nearestOption_('set-daily', cap);
       if (cap > 0 && capPick === '0') capPick = '10';
       document.getElementById('set-daily').value = capPick;
+      // The same shape again, and the same guard: 0 here means "never introduce
+      // new cards", so a real gate of 3 must not read as that.
+      var gate = parseInt(c.box1_new_gate, 10);
+      if (!isFinite(gate) || gate < 0) gate = 20;
+      var gatePick = nearestOption_('set-gate', gate);
+      if (gate > 0 && gatePick === '0') gatePick = '5';
+      document.getElementById('set-gate').value = gatePick;
+      // Two named values rather than a number, so anything else is "random".
+      document.getElementById('set-neworder').value =
+        String(c.new_card_order || '').toLowerCase() === 'recent' ? 'recent' : 'random';
       var rep = parseInt(c.sentence_repeat, 10);
       if (!isFinite(rep) || rep < 1) rep = 1;
       document.getElementById('set-repeat').value = nearestOption_('set-repeat', rep);
@@ -2065,8 +2104,8 @@
       // A fork that blanked UPDATE_CHECK_URL sends nothing regardless — don't
       // offer a switch for a feature that isn't there.
       document.getElementById('set-update-wrap').classList.toggle('hidden', !UPDATE_CHECK_URL);
-      // The AI section is a signpost, not a setting: everything it needs lives
-      // in the Sheet's config tab, so link straight at that tab.
+      // A door, not a setting: the AI key, endpoint and model live in the Sheet,
+      // so link straight at the config tab rather than restate them here.
       var aiLink = document.getElementById('set-config-link');
       var cfgUrl = sessionData && (sessionData.configUrl || sessionData.sheetUrl);
       if (cfgUrl) { aiLink.href = cfgUrl; aiLink.style.display = ''; }
@@ -2082,18 +2121,26 @@
     function saveSettings() {
       var lang = readLangSelect('set-lang', 'set-lang-other');
       if (!lang) { document.getElementById('settings-msg').textContent = 'Enter a language tag first.'; return; }
-      var prevCap = String(sessionData.config.daily_limit == null ? '' : sessionData.config.daily_limit).trim();
       var native = readLangSelect('set-native', 'set-native-other');
       if (!native) {
         document.getElementById('settings-msg').textContent = 'Name the language to explain in.';
         return;
       }
+      // Three settings the HOME screen reads from the server, not from this
+      // cached config: the day's remaining numbers, and the "new cards wait
+      // until box 1 is under N" line. A change to any of them needs a re-read.
+      function prev_(k) {
+        return String(sessionData.config[k] == null ? '' : sessionData.config[k]).trim();
+      }
+      var prevHome = [prev_('daily_limit'), prev_('box1_new_gate'), prev_('new_card_order')].join('|');
       var updates = {
         target_language: lang,
         native_language: native,
         speech_rate: document.getElementById('set-rate').value,
         auto_speak: document.getElementById('set-autospeak').checked ? 'yes' : 'no',
         daily_limit: document.getElementById('set-daily').value,
+        box1_new_gate: document.getElementById('set-gate').value,
+        new_card_order: document.getElementById('set-neworder').value,
         sentence_gap: document.getElementById('set-gap').value,
         sentence_repeat: document.getElementById('set-repeat').value,
         update_check: document.getElementById('set-updatecheck').checked ? 'yes' : 'no'
@@ -2123,9 +2170,7 @@
           document.getElementById('update-hint').classList.add('hidden');
         }
         closeSettings();
-        // The day's numbers on home come from the server, not from config, so a
-        // changed limit needs a re-read to stop the old figures standing there.
-        if (updates.daily_limit !== prevCap) loadHome();
+        if ([updates.daily_limit, updates.box1_new_gate, updates.new_card_order].join('|') !== prevHome) loadHome();
         showToast('Settings saved');
       }
     }
