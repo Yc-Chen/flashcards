@@ -285,19 +285,28 @@
     .ai-copy-row .msg { font-size: 13px; color: var(--muted); flex: 1; }
     .ai-list { display: flex; flex-direction: column; gap: 14px; }
     .ai-change { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-    .ai-change .who { font-size: 15px; font-weight: 700; word-break: break-word; }
+    /* The header is the card's tick box, and it is a <label> so the whole line
+       — word and all — is the tap target, not a 20px square on a phone. It has
+       to undo .overlay label, which is styled for the small grey captions. */
+    .ai-change .who { font-size: 15px; font-weight: 700; word-break: break-word;
+      color: var(--text); text-transform: none; letter-spacing: normal;
+      margin-top: 0; display: flex; align-items: flex-start; gap: 10px;
+      justify-content: flex-start; cursor: pointer; }
     .ai-change .who .tag { font-size: 11px; font-weight: 600; color: var(--muted);
       text-transform: uppercase; letter-spacing: 0.6px; margin-left: 8px; }
+    /* Unticked: still legible, visibly not happening. */
+    .ai-change.off { border-style: dashed; }
+    .ai-change.off .ai-body { opacity: 0.4; }
     .ai-field { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
       color: var(--muted); margin: 10px 0 4px; }
     .ai-pair { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
     .ai-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
       color: var(--muted); min-width: 30px; padding-top: 4px; flex: none; }
-    .ai-old, .ai-new { font-size: 14px; border-left: 2px solid var(--border);
+    .ai-old, .ai-new, .ai-note { font-size: 14px; border-left: 2px solid var(--border);
       padding-left: 10px; word-break: break-word; flex: 1; }
     .ai-old { color: var(--muted); }
     .ai-new { border-left-color: var(--green); }
-    .ai-old .md p, .ai-new .md p { margin: 2px 0; }
+    .ai-old .md p, .ai-new .md p, .ai-note .md p { margin: 2px 0; }
     .ai-meta { font-size: 13px; color: var(--muted); margin-top: 10px; }
     .ai-problems { font-size: 13px; color: var(--muted); white-space: pre-wrap;
       word-break: break-word; }
@@ -664,7 +673,10 @@
           <label for="aifill-keepnotes">Keep my notes</label>
           <input type="checkbox" id="aifill-keepnotes" onchange="aiRenderChanges()">
         </div>
+        <p class="ai-step-note">Untick any card you would rather not take. It keeps
+          the answer it has and stays on the list for next time.</p>
         <div class="ai-list" id="aifill-list"></div>
+        <div class="editor-msg" id="aifill-skipmsg"></div>
         <p class="ai-problems hidden" id="aifill-problems"></p>
         <div class="editor-msg" id="aifill-msg2"></div>
         <div class="editor-actions">
@@ -1631,13 +1643,14 @@
     // decided against the Sheet as it is at that moment, not against this
     // screen. See aiPrompt / aiPreview / aiApply in Code.js.
     var aiChanges = null;    // the previewed changes, kept for re-rendering
+    var aiSkipped = {};      // rows unticked in the preview, by sheet row
     var aiProblems = [];     // cards the reply named that cannot be written
     var aiReplyText = '';    // the exact text the preview was built from
     var aiDirty = false;     // something was written, so the home counts moved
 
     function openAiFill() {
       if (!sessionData) { showToast('Still loading — try again in a moment'); return; }
-      aiChanges = null; aiProblems = []; aiReplyText = ''; aiDirty = false;
+      aiChanges = null; aiSkipped = {}; aiProblems = []; aiReplyText = ''; aiDirty = false;
       document.getElementById('aifill-reply').value = '';
       document.getElementById('aifill-msg').textContent = '';
       document.getElementById('aifill-msg2').textContent = '';
@@ -1647,6 +1660,7 @@
       document.getElementById('aifill-problems').classList.add('hidden');
       var write = document.getElementById('aifill-write-btn');
       write.disabled = false; write.textContent = 'Write';
+      document.getElementById('aifill-skipmsg').textContent = '';
       var box = document.getElementById('aifill-prompt');
       box.value = '';
       var count = document.getElementById('aifill-count');
@@ -1726,6 +1740,7 @@
             return;
           }
           aiChanges = res.changes;
+          aiSkipped = {};
           aiProblems = res.problems;
           aiReplyText = text;
           aiRenderChanges();
@@ -1748,8 +1763,12 @@
       list.innerHTML = '';
 
       aiChanges.forEach(function (c) {
-        var html = '<div class="who">' + escHtml(c.front.before) +
-          '<span class="tag">' + (c.isNew ? 'new' : 'flagged') + '</span></div>';
+        var on = !aiSkipped[c.row];
+        var html = '<label class="who"><input type="checkbox"' +
+          (on ? ' checked' : '') + ' onchange="aiPick_(' + c.row + ', this.checked)">' +
+          '<span>' + escHtml(c.front.before) +
+          '<span class="tag">' + (c.isNew ? 'new' : 'flagged') + '</span></span></label>' +
+          '<div class="ai-body">';
         if (c.front.after !== c.front.before) {
           html += '<div class="ai-field">prompt</div>' +
             aiPair_('was', 'ai-old', c.front.before) +
@@ -1761,13 +1780,21 @@
         if (c.back.before) html += aiPair_('was', 'ai-old', c.back.before);
         html += aiPair_(c.back.before ? 'now' : '', 'ai-new', c.back.after);
 
+        // The note is the owner's own writing and clearing it is the default,
+        // so show what is about to go rather than the word "cleared".
+        if (c.notes) {
+          html += '<div class="ai-field">your note' +
+            (keepNotes ? '' : ' — cleared') + '</div>' +
+            aiPair_('', keepNotes ? 'ai-note' : 'ai-old', c.notes);
+        }
+
         var meta = [];
-        if (c.notes) meta.push(keepNotes ? 'notes kept' : 'notes cleared');
         if (c.flag) meta.push(keepFlag ? 'flag kept' : 'flag cleared');
         if (meta.length) html += '<div class="ai-meta">' + meta.join(' · ') + '</div>';
+        html += '</div>';
 
         var el = document.createElement('div');
-        el.className = 'ai-change';
+        el.className = 'ai-change' + (on ? '' : ' off');
         el.innerHTML = html;
         list.appendChild(el);
       });
@@ -1780,9 +1807,39 @@
         prob.classList.add('hidden');
       }
 
-      var n = aiChanges.length;
-      document.getElementById('aifill-write-btn').textContent =
-        'Write ' + n + (n === 1 ? ' card' : ' cards');
+      aiCountPicked_();
+    }
+
+    // One card in or out. The state lives outside the markup because the two
+    // keep-toggles redraw the whole list, and an unticked card has to stay
+    // unticked across that.
+    function aiPick_(row, on) {
+      if (on) delete aiSkipped[row]; else aiSkipped[row] = true;
+      var el = document.getElementById('aifill-list').children[aiIndexOfRow_(row)];
+      if (el) el.classList.toggle('off', !on);
+      aiCountPicked_();
+    }
+
+    function aiIndexOfRow_(row) {
+      for (var i = 0; i < aiChanges.length; i++) if (aiChanges[i].row === row) return i;
+      return -1;
+    }
+
+    function aiPickedRows_() {
+      return aiChanges.filter(function (c) { return !aiSkipped[c.row]; })
+        .map(function (c) { return c.row; });
+    }
+
+    function aiCountPicked_() {
+      var n = aiPickedRows_().length;
+      var btn = document.getElementById('aifill-write-btn');
+      btn.disabled = n === 0;
+      btn.textContent = n === 0
+        ? 'Nothing ticked'
+        : 'Write ' + n + (n === 1 ? ' card' : ' cards');
+      var left = aiChanges.length - n;
+      document.getElementById('aifill-skipmsg').textContent =
+        left ? left + ' left for another time' : '';
     }
 
     function aiDoApply() {
@@ -1797,6 +1854,7 @@
           var said = res.written
             ? 'Wrote ' + res.written + (res.written === 1 ? ' card' : ' cards')
             : 'Nothing was written';
+          if (res.skipped) said += ', left ' + res.skipped;
           // A problem here is one the preview could not have shown — a row that
           // moved under us — so it stays on screen instead of going out as a
           // toast that disappears.
@@ -1815,7 +1873,8 @@
           btn.disabled = false;
           msg.textContent = String((e && e.message) || e);
         })
-        .aiApply(aiReplyText, { keepFlag: keepAiFlag_(), keepNotes: keepAiNotes_() });
+        .aiApply(aiReplyText, { keepFlag: keepAiFlag_(), keepNotes: keepAiNotes_(),
+          rows: aiPickedRows_() });
     }
 
     function aiPair_(label, cls, value) {

@@ -250,7 +250,8 @@ the owner's own field, and the AI never writes one.
 **`flag` and `notes` are cleared rather than kept.** Both are marks that a card
 needed work, and the work has just been done; leaving them would mean the card
 comes back as a target on the next run forever. The two toggles in the preview
-keep either one, per batch.
+keep either one, per batch — and anything you would rather not take at all can
+be unticked card by card in the same screen.
 
 **`front_side` only moves on a card that is still new.** A blank `box` means the
 card has never been studied, so tidying its prompt (an article to strip, a
@@ -362,7 +363,7 @@ cannot reach private functions):
 |---|---|---|
 | 1. Copy the prompt | `aiPrompt()` | `aiBatchPrompt_` over the first `AI_COPY_LIMIT` (40) targets → `{ prompt, count, total, limit }` |
 | 2. Paste the reply | `aiPreview(text)` | `{ changes, problems }` — resolves the reply without writing anything |
-| 3. Read it, then write | `aiApply(text, opts)` | `{ written, filled, redone, problems }`, `opts = { keepFlag, keepNotes }` |
+| 3. Read it, then write | `aiApply(text, opts)` | `{ written, filled, redone, skipped, problems }`, `opts = { keepFlag, keepNotes, rows }` |
 
 `aiApply` takes **the reply text again, not the previewed objects**. One parse
 implementation, nothing client-shaped to trust, and the Sheet is read afresh at
@@ -371,11 +372,23 @@ caught by the row guard rather than written from stale state. Both calls run
 through `aiResolve_`, which is also where the targets are recomputed, so a card
 filled in by hand in the meantime simply stops being one.
 
+Every card in the preview carries a tick box, and `opts.rows` is the ones still
+ticked. It is an **allow-list of sheet rows, not of answers**: the reply is
+still the only source of what gets written, so the list can at most write fewer
+cards than the preview showed, never a different one — and an absent `rows` (an
+older client, or any other caller) means all of them. An unticked card is a
+decision rather than a failure, so it is counted in `skipped` instead of
+reported in `problems`, nothing about it is touched, and it is still a target
+next time: a flag that was going to be cleared stays on.
+
 Each change is a plain object the client renders with its own `md()`:
 `{ row, id, type, isNew, job, given, front: {before, after}, back: {before,
 after}, notes, flag }`. `notes` and `flag` are the card's *current* values, not
 a decision — the panel's two toggles redraw from them with no round trip, and
-only the `opts` sent with `aiApply` decide what happens. `given` records
+only the `opts` sent with `aiApply` decide what happens. The note is shown in
+full rather than summarised as "notes cleared": it is the owner's own writing,
+clearing it is the default, and a line of your own is the one thing on that
+screen you cannot reconstruct from the reply if it goes. `given` records
 whether the reply carried an answer at all, which is not the same as the answer
 having changed: a model that returns the existing answer verbatim has still done
 its job, and the card still counts as dealt with.

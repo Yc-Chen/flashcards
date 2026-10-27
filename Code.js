@@ -722,16 +722,29 @@ function aiPreview(text) {
  * here — so a card edited between the preview and the button is caught by
  * `aiWriteCard_`'s row guard instead of being written from stale state.
  * @param {string} text The same reply that was previewed.
- * @param {Object} opts { keepFlag, keepNotes } — both default to false.
- * @return {Object} { written, filled, redone, problems }.
+ * @param {Object} opts { keepFlag, keepNotes, rows } — the two keeps default to
+ *     false; `rows` is the sheet rows the owner left ticked in the preview.
+ *     Absent means all of them, which is what the Sheet's own route sends.
+ * @return {Object} { written, filled, redone, skipped, problems }.
  */
 function aiApply(text, opts) {
   var resolved = aiResolve_(text);
   var problems = resolved.problems.slice(0);
-  var written = 0, filled = 0, redone = 0;
+  var written = 0, filled = 0, redone = 0, skipped = 0;
+  // An allow-list of row numbers, not of answers: the reply is still the only
+  // source of what gets written, so a tampered-with list can at most write
+  // fewer cards than the preview showed, never a different one.
+  var picked = null;
+  if (opts && opts.rows && opts.rows.length != null) {
+    picked = {};
+    for (var p = 0; p < opts.rows.length; p++) picked[Number(opts.rows[p])] = true;
+  }
 
   for (var i = 0; i < resolved.changes.length; i++) {
     var change = resolved.changes[i];
+    // Left unticked in the preview. Not a problem — a decision — so it is
+    // counted rather than reported, and the card stays a target for next time.
+    if (picked && !picked[change.row]) { skipped++; continue; }
     var wrote = aiWriteCard_(resolved.sheet, change, opts);
     if (wrote === 'moved') {
       problems.push('card ' + change.row + ': a different card is on that row ' +
@@ -745,7 +758,8 @@ function aiApply(text, opts) {
     written++;
     if (change.job === 'fill') filled++; else redone++;
   }
-  return { written: written, filled: filled, redone: redone, problems: problems };
+  return { written: written, filled: filled, redone: redone, skipped: skipped,
+    problems: problems };
 }
 
 /**
